@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geometry Diagram Maker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="palette">
+    <span class="palette-title">Shapes</span>
+    <div class="shape-icon" draggable="true" data-shape="rectangle" title="Rectangle">
+      <svg viewBox="0 0 24 16"><rect x="2" y="2" width="20" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </div>
+    <div class="shape-icon" draggable="true" data-shape="parallelogram" title="Parallelogram">
+      <svg viewBox="0 0 24 16"><path d="M4 2 L22 2 L18 14 L0 14 Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </div>
+    <div class="shape-icon" draggable="true" data-shape="trapezoid" title="Trapezoid">
+      <svg viewBox="0 0 24 16"><path d="M6 2 L18 2 L22 14 L2 14 Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </div>
+    <div class="shape-icon" draggable="true" data-shape="right-triangle" title="Right triangle">
+      <svg viewBox="0 0 24 16"><path d="M2 2 L2 14 L22 14 Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </div>
+    <div class="shape-icon" draggable="true" data-shape="equilateral-triangle" title="Equilateral triangle">
+      <svg viewBox="0 0 24 20"><path d="M12 2 L22 18 L2 18 Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </div>
+    <div class="trash-zone" id="trash" title="Drag a shape here to delete">
+      <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+    </div>
+  </aside>
+  <div class="workspace-wrap">
+    <svg id="workspace"></svg>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

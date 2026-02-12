@@ -1,0 +1,176 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #fff;
+  color: #333;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+.palette {
+  width: 72px;
+  background: #f5f5f5;
+  border-right: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 8px;
+}
+
+.palette-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.shape-icon {
+  width: 48px;
+  height: 48px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8e8e8;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.shape-icon:hover {
+  background: #ddd;
+  border-color: #333;
+}
+
+.shape-icon:active {
+  cursor: grabbing;
+}
+
+.shape-icon svg {
+  width: 36px;
+  height: 36px;
+  fill: #333;
+  stroke: #333;
+  stroke-width: 1.5;
+}
+
+.trash-zone {
+  margin-top: auto;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8e8e8;
+  border-radius: 8px;
+  border: 2px dashed #999;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.trash-zone.drag-over {
+  background: rgba(220, 53, 69, 0.2);
+  border-color: #dc3545;
+}
+
+.trash-zone svg {
+  width: 28px;
+  height: 28px;
+  fill: #666;
+}
+
+.trash-zone.drag-over svg {
+  fill: #dc3545;
+}
+
+.workspace-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+#workspace {
+  width: 100%;
+  height: 100%;
+  background-color: #fff;
+  cursor: default;
+}
+
+#workspace.drag-over {
+  background-color: #f8f8f8;
+}
+
+.shape-group {
+  cursor: move;
+}
+
+.shape-group .shape-body {
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 2;
+  transition: fill 0.15s;
+}
+
+.shape-group:hover .shape-body {
+  fill: #f5f5f5;
+}
+
+.shape-group .vertex {
+  fill: #000;
+  stroke: #fff;
+  stroke-width: 1;
+  cursor: grab;
+  r: 3;
+}
+
+.shape-group .vertex:hover {
+  fill: #333;
+}
+
+.shape-group .vertex:active {
+  cursor: grabbing;
+}
+
+.shape-group .vertex-label {
+  font-size: 22pt;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  fill: #000;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.shape-group .vertex-label:active {
+  cursor: grabbing;
+}
+
+.shape-group .edge-label {
+  font-size: 22pt;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  fill: #000;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.shape-group .edge-label:active {
+  cursor: grabbing;
+}
+
+.vertex-label-editor {
+  overflow: visible;
+}
+
+.vertex-label-input {
+  width: 100%;
+  height: 100%;
+  padding: 2px 6px;
+  font-size: 22pt;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  border: 1px solid #333;
+  border-radius: 2px;
+  outline: none;
+  box-sizing: border-box;
+}
