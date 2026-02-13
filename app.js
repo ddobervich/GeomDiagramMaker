@@ -1,6 +1,6 @@
 (function () {
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const SCALE = 240;
+  const SCALE = 480;
   const shapes = {
     'rectangle': [[0, 0], [1, 0], [1, 0.6], [0, 0.6]],
     'parallelogram': [[0, 0], [1, 0], [0.85, 0.6], [-0.15, 0.6]],
@@ -571,7 +571,7 @@
       text.setAttribute('y', p[1] - 8);
       text.setAttribute('text-anchor', 'start');
       text.setAttribute('dominant-baseline', 'auto');
-      text.setAttribute('pointer-events', 'none');
+      text.setAttribute('pointer-events', 'all');
       labelsGroup.appendChild(text);
     });
     g.appendChild(labelsGroup);
@@ -1414,6 +1414,7 @@
 
     g.addEventListener('mousedown', function (ev) {
       if (ev.target.classList.contains('vertex')) return;
+      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label')) return;
       if (altitudeDrawingMode) return;
       ev.preventDefault();
       startShapeDrag(ev);
