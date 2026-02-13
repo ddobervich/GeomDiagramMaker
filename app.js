@@ -23,6 +23,274 @@
   let contextMenuTimeout = null;
   let altitudeDrawingMode = null;
 
+  const MAX_UNDO = 50;
+  let undoStack = [];
+  let redoStack = [];
+
+  function serializeWorkspace() {
+    const groups = workspace.querySelectorAll('.shape-group');
+    const shapesState = [];
+    let maxAltitudeId = 0;
+    groups.forEach(g => {
+      const shapeType = g.dataset.shapeType || 'rectangle';
+      const circles = g.querySelectorAll('.vertex');
+      const vertices = Array.from(circles).map(c => [
+        parseFloat(c.getAttribute('cx')),
+        parseFloat(c.getAttribute('cy'))
+      ]);
+      const n = vertices.length;
+      const vertexLabels = [];
+      circles.forEach((_, i) => {
+        const el = g.querySelector('.vertex-label[data-vertex-index="' + i + '"]');
+        vertexLabels.push({
+          text: (el && (el.textContent || el.getAttribute('data-label') || '')) || '',
+          offsetDx: el && el.hasAttribute('data-offset-dx') ? parseFloat(el.getAttribute('data-offset-dx')) : LABEL_OFFSET_X,
+          offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : LABEL_OFFSET_Y
+        });
+      });
+      const vertexStyles = [];
+      circles.forEach(c => {
+        const r = c.getAttribute('data-size') || c.getAttribute('r') || '3';
+        const fill = c.getAttribute('data-color') || c.style.fill || '';
+        vertexStyles.push({ r: parseInt(r, 10), fill: fill || undefined });
+      });
+      const edgeLabels = [];
+      for (let i = 0; i < n; i++) {
+        const el = g.querySelector('.edge-label[data-edge-index="' + i + '"]');
+        edgeLabels.push({
+          text: (el && (el.textContent || el.getAttribute('data-label') || '')) || '',
+          offsetDx: el && el.hasAttribute('data-offset-dx') ? parseFloat(el.getAttribute('data-offset-dx')) : 0,
+          offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : 0
+        });
+      }
+      const edgeStyles = [];
+      const edgeLines = g.querySelectorAll('.shape-edge');
+      edgeLines.forEach(line => {
+        edgeStyles.push({
+          stroke: line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#000',
+          strokeWidth: line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2',
+          strokeDasharray: line.getAttribute('data-stroke-dasharray') || undefined,
+          strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined
+        });
+      });
+      const altitudes = [];
+      g.querySelectorAll('.altitude-line').forEach(altLine => {
+        const aid = altLine.getAttribute('data-altitude-id');
+        if (aid) maxAltitudeId = Math.max(maxAltitudeId, parseInt(aid, 10));
+        const labelEl = g.querySelector('.altitude-label[data-altitude-id="' + aid + '"]');
+        altitudes.push({
+          vertexIndex: parseInt(altLine.getAttribute('data-vertex-index'), 10),
+          edgeIndex: parseInt(altLine.getAttribute('data-edge-index'), 10),
+          t: parseFloat(altLine.getAttribute('data-edge-t')),
+          labelText: labelEl ? (labelEl.textContent || labelEl.getAttribute('data-label') || '') : '',
+          offsetDx: labelEl && labelEl.hasAttribute('data-offset-dx') ? parseFloat(labelEl.getAttribute('data-offset-dx')) : 0,
+          offsetDy: labelEl && labelEl.hasAttribute('data-offset-dy') ? parseFloat(labelEl.getAttribute('data-offset-dy')) : 0
+        });
+      });
+      shapesState.push({
+        shapeType,
+        vertices,
+        vertexLabels,
+        vertexStyles,
+        edgeLabels,
+        edgeStyles,
+        altitudes
+      });
+    });
+    return { shapes: shapesState, nextAltitudeId: maxAltitudeId + 1 };
+  }
+
+  function createShapeFromState(s, nextShapeId, startAltitudeId) {
+    const shapeType = s.shapeType;
+    const vertices = s.vertices;
+    const n = vertices.length;
+    const id = 'shape-' + nextShapeId;
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.id = id;
+    g.classList.add('shape-group');
+    g.dataset.shapeId = id;
+    g.dataset.shapeType = shapeType;
+    const pts = vertices.map(p => p.join(',')).join(' ');
+    const polygon = document.createElementNS(SVG_NS, 'polygon');
+    polygon.classList.add('shape-body');
+    polygon.setAttribute('points', pts);
+    polygon.setAttribute('stroke', 'none');
+    g.appendChild(polygon);
+    const edgesGroup = document.createElementNS(SVG_NS, 'g');
+    edgesGroup.setAttribute('class', 'shape-edges');
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('class', 'shape-edge');
+      line.setAttribute('data-edge-index', i);
+      line.setAttribute('x1', vertices[i][0]);
+      line.setAttribute('y1', vertices[i][1]);
+      line.setAttribute('x2', vertices[j][0]);
+      line.setAttribute('y2', vertices[j][1]);
+      const es = (s.edgeStyles && s.edgeStyles[i]) || {};
+      line.setAttribute('stroke', es.stroke || '#000');
+      line.setAttribute('stroke-width', String(es.strokeWidth || '2'));
+      if (es.strokeDasharray) {
+        line.setAttribute('data-stroke-dasharray', es.strokeDasharray);
+        line.setAttribute('stroke-dasharray', es.strokeDasharray);
+      }
+      if (es.strokeLinecap) {
+        line.setAttribute('data-stroke-linecap', es.strokeLinecap);
+        line.setAttribute('stroke-linecap', es.strokeLinecap);
+      }
+      edgesGroup.appendChild(line);
+    }
+    g.appendChild(edgesGroup);
+    vertices.forEach((p, i) => {
+      const circle = document.createElementNS(SVG_NS, 'circle');
+      circle.classList.add('vertex');
+      const vs = (s.vertexStyles && s.vertexStyles[i]) || {};
+      circle.setAttribute('r', String(vs.r || 3));
+      circle.setAttribute('cx', p[0]);
+      circle.setAttribute('cy', p[1]);
+      circle.setAttribute('data-index', i);
+      if (vs.fill) { circle.style.fill = vs.fill; circle.setAttribute('data-color', vs.fill); }
+      circle.setAttribute('pointer-events', 'all');
+      g.appendChild(circle);
+    });
+    const labelsGroup = document.createElementNS(SVG_NS, 'g');
+    labelsGroup.setAttribute('class', 'vertex-labels');
+    const vLabels = s.vertexLabels || [];
+    vertices.forEach((p, i) => {
+      const vl = vLabels[i] || {};
+      const text = document.createElementNS(SVG_NS, 'text');
+      text.setAttribute('class', 'vertex-label');
+      text.setAttribute('data-vertex-index', i);
+      text.setAttribute('x', p[0] + (vl.offsetDx != null ? vl.offsetDx : LABEL_OFFSET_X));
+      text.setAttribute('y', p[1] + (vl.offsetDy != null ? vl.offsetDy : LABEL_OFFSET_Y));
+      text.setAttribute('text-anchor', 'start');
+      text.setAttribute('dominant-baseline', 'auto');
+      text.setAttribute('pointer-events', 'all');
+      if (vl.text) { text.textContent = vl.text; text.setAttribute('data-label', vl.text); }
+      text.setAttribute('data-offset-dx', String(vl.offsetDx != null ? vl.offsetDx : LABEL_OFFSET_X));
+      text.setAttribute('data-offset-dy', String(vl.offsetDy != null ? vl.offsetDy : LABEL_OFFSET_Y));
+      labelsGroup.appendChild(text);
+    });
+    g.appendChild(labelsGroup);
+    const edgeLabelsGroup = document.createElementNS(SVG_NS, 'g');
+    edgeLabelsGroup.setAttribute('class', 'edge-labels');
+    const eLabels = s.edgeLabels || [];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const mx = (vertices[i][0] + vertices[j][0]) / 2;
+      const my = (vertices[i][1] + vertices[j][1]) / 2;
+      const el = eLabels[i] || {};
+      const text = document.createElementNS(SVG_NS, 'text');
+      text.setAttribute('class', 'edge-label');
+      text.setAttribute('data-edge-index', i);
+      text.setAttribute('x', mx + (el.offsetDx || 0));
+      text.setAttribute('y', my + (el.offsetDy || 0));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'middle');
+      if (el.text) { text.textContent = el.text; text.setAttribute('data-label', el.text); }
+      text.setAttribute('data-offset-dx', String(el.offsetDx != null ? el.offsetDx : 0));
+      text.setAttribute('data-offset-dy', String(el.offsetDy != null ? el.offsetDy : 0));
+      edgeLabelsGroup.appendChild(text);
+    }
+    g.appendChild(edgeLabelsGroup);
+    const altitudeLabelsGroup = document.createElementNS(SVG_NS, 'g');
+    altitudeLabelsGroup.setAttribute('class', 'altitude-labels');
+    g.appendChild(altitudeLabelsGroup);
+    (s.altitudes || []).forEach((alt, idx) => {
+      const aid = String(startAltitudeId + idx);
+      const vx = vertices[alt.vertexIndex][0];
+      const vy = vertices[alt.vertexIndex][1];
+      const ei = alt.edgeIndex;
+      const ej = (ei + 1) % n;
+      const ex1 = vertices[ei][0];
+      const ey1 = vertices[ei][1];
+      const ex2 = vertices[ej][0];
+      const ey2 = vertices[ej][1];
+      const perp = perpendicularPointToLine(vx, vy, ex1, ey1, ex2, ey2);
+      if (perp) {
+        const altLine = document.createElementNS(SVG_NS, 'line');
+        altLine.setAttribute('x1', vx);
+        altLine.setAttribute('y1', vy);
+        altLine.setAttribute('x2', perp.x);
+        altLine.setAttribute('y2', perp.y);
+        altLine.setAttribute('stroke', '#666');
+        altLine.setAttribute('stroke-width', '2');
+        altLine.setAttribute('stroke-dasharray', '8,4');
+        altLine.setAttribute('class', 'altitude-line');
+        altLine.setAttribute('data-altitude-id', aid);
+        altLine.setAttribute('data-vertex-index', String(alt.vertexIndex));
+        altLine.setAttribute('data-edge-index', String(alt.edgeIndex));
+        altLine.setAttribute('data-edge-t', String(alt.t));
+        g.insertBefore(altLine, altitudeLabelsGroup);
+        const mx = (vx + perp.x) / 2;
+        const my = (vy + perp.y) / 2;
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('class', 'altitude-label');
+        label.setAttribute('data-altitude-id', aid);
+        label.setAttribute('data-offset-dx', String(alt.offsetDx != null ? alt.offsetDx : 0));
+        label.setAttribute('data-offset-dy', String(alt.offsetDy != null ? alt.offsetDy : 0));
+        label.setAttribute('x', mx + (alt.offsetDx || 0));
+        label.setAttribute('y', my + (alt.offsetDy || 0));
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('dominant-baseline', 'middle');
+        if (alt.labelText) { label.textContent = alt.labelText; label.setAttribute('data-label', alt.labelText); }
+        altitudeLabelsGroup.appendChild(label);
+      }
+    });
+    enableVertexDrag(g);
+    enableVertexLabels(g);
+    enableLabelDrag(g);
+    enableEdgeLabels(g);
+    enableAltitudeLabelDrag(g);
+    enableShapeDragToTrash(g);
+    g.addEventListener('dblclick', function (ev) {
+      if (!ev.target.classList.contains('altitude-line')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (contextMenuTimeout) {
+        clearTimeout(contextMenuTimeout);
+        contextMenuTimeout = null;
+      }
+      openAltitudeLabelEditor(g, ev.target);
+    });
+    workspace.appendChild(g);
+    return g;
+  }
+
+  function restoreWorkspace(state) {
+    if (!state || !state.shapes) return;
+    const groups = workspace.querySelectorAll('.shape-group');
+    groups.forEach(gr => gr.remove());
+    let nextShapeId = 1;
+    let nextAltitudeId = 1;
+    state.shapes.forEach(shapeState => {
+      createShapeFromState(shapeState, nextShapeId++, nextAltitudeId);
+      const altCount = (shapeState.altitudes && shapeState.altitudes.length) || 0;
+      nextAltitudeId += altCount;
+    });
+    shapeIdCounter = Math.max(shapeIdCounter, nextShapeId - 1);
+    altitudeIdCounter = Math.max(altitudeIdCounter, nextAltitudeId - 1);
+  }
+
+  function pushUndo() {
+    const state = serializeWorkspace();
+    undoStack.push(state);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack.length = 0;
+  }
+
+  function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push(serializeWorkspace());
+    restoreWorkspace(undoStack.pop());
+  }
+
+  function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push(serializeWorkspace());
+    restoreWorkspace(redoStack.pop());
+  }
+
   function hideContextMenu() {
     contextMenuEl.style.display = 'none';
     contextMenuEl.innerHTML = '';
@@ -268,6 +536,7 @@
       ev.preventDefault();
       ev.stopPropagation();
       if (altitudeDrawingMode.snappedPoint) {
+        pushUndo();
         const aid = String(++altitudeIdCounter);
         const x1 = altitudeDrawingMode.vertexX;
         const y1 = altitudeDrawingMode.vertexY;
@@ -525,6 +794,7 @@
     g.id = id;
     g.classList.add('shape-group');
     g.dataset.shapeId = id;
+    g.dataset.shapeType = shapeType;
 
     const polygon = document.createElementNS(SVG_NS, 'polygon');
     polygon.classList.add('shape-body');
@@ -578,15 +848,24 @@
 
     const edgeLabelsGroup = document.createElementNS(SVG_NS, 'g');
     edgeLabelsGroup.setAttribute('class', 'edge-labels');
+    const cx = coords.reduce((s, p) => s + p[0], 0) / n;
+    const cy = coords.reduce((s, p) => s + p[1], 0) / n;
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const mx = (coords[i][0] + coords[j][0]) / 2;
       const my = (coords[i][1] + coords[j][1]) / 2;
+      const outX = mx - cx;
+      const outY = my - cy;
+      const len = Math.hypot(outX, outY) || 1;
+      const dx = (outX / len) * EDGE_LABEL_OFFSET_DISTANCE;
+      const dy = (outY / len) * EDGE_LABEL_OFFSET_DISTANCE;
       const text = document.createElementNS(SVG_NS, 'text');
       text.setAttribute('class', 'edge-label');
       text.setAttribute('data-edge-index', i);
-      text.setAttribute('x', mx);
-      text.setAttribute('y', my);
+      text.setAttribute('data-offset-dx', String(dx));
+      text.setAttribute('data-offset-dy', String(dy));
+      text.setAttribute('x', mx + dx);
+      text.setAttribute('y', my + dy);
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('dominant-baseline', 'middle');
       edgeLabelsGroup.appendChild(text);
@@ -691,6 +970,7 @@
 
   const EDGE_LABEL_OFFSET_X = 0;
   const EDGE_LABEL_OFFSET_Y = 0;
+  const EDGE_LABEL_OFFSET_DISTANCE = 14;
 
   function updateEdgeLabelPositions(g) {
     const circles = g.querySelectorAll('.vertex');
@@ -871,6 +1151,7 @@
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
         if (Math.hypot(dx, dy) >= VERTEX_DRAG_THRESHOLD) {
+          pushUndo();
           if (pendingVertexShift) {
             const shapeGroup = pendingVertex.closest('.shape-group');
             const startPoints = getVertexCoords(shapeGroup);
@@ -994,10 +1275,13 @@
 
     function commit() {
       const value = input.value.trim();
-      if (textEl) textEl.textContent = value;
-      circle.setAttribute('data-label', value);
+      if (value !== currentLabel) {
+        pushUndo();
+        if (textEl) textEl.textContent = value;
+        circle.setAttribute('data-label', value);
+        updateLabelPositions(shapeGroup);
+      }
       fo.remove();
-      updateLabelPositions(shapeGroup);
     }
 
     input.addEventListener('blur', commit);
@@ -1031,7 +1315,7 @@
     });
   }
 
-  const EDGE_HIT_THRESHOLD = 12;
+  const EDGE_HIT_THRESHOLD = 24;
 
   function getClosestEdgeIndex(g, px, py) {
     const points = getVertexCoords(g);
@@ -1047,6 +1331,25 @@
       }
     }
     return bestDist < EDGE_HIT_THRESHOLD ? bestEdge : null;
+  }
+
+  function getClosestEdgeAcrossShapes(px, py) {
+    const groups = workspace.querySelectorAll('.shape-group');
+    let bestDist = Infinity;
+    let best = null;
+    groups.forEach(g => {
+      const points = getVertexCoords(g);
+      const n = points.length;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const { dist, t } = distanceToSegment(px, py, points[i][0], points[i][1], points[j][0], points[j][1]);
+        if (dist < bestDist && t >= 0.05 && t <= 0.95 && dist < EDGE_HIT_THRESHOLD) {
+          bestDist = dist;
+          best = { g: g, edgeIndex: i };
+        }
+      }
+    });
+    return best;
   }
 
   function openEdgeLabelEditor(shapeGroup, edgeIndex, editorX, editorY) {
@@ -1077,10 +1380,13 @@
 
     function commit() {
       const value = input.value.trim();
-      textEl.textContent = value;
-      textEl.setAttribute('data-label', value);
+      if (value !== currentLabel) {
+        pushUndo();
+        textEl.textContent = value;
+        textEl.setAttribute('data-label', value);
+        updateEdgeLabelPositions(shapeGroup);
+      }
       fo.remove();
-      updateEdgeLabelPositions(shapeGroup);
     }
 
     input.addEventListener('blur', commit);
@@ -1120,8 +1426,11 @@
 
     function commit() {
       const value = input.value.trim();
-      textEl.textContent = value;
-      textEl.setAttribute('data-label', value);
+      if (value !== currentLabel) {
+        pushUndo();
+        textEl.textContent = value;
+        textEl.setAttribute('data-label', value);
+      }
       fo.remove();
     }
 
@@ -1379,6 +1688,7 @@
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
         if (Math.hypot(dx, dy) >= SHAPE_DRAG_THRESHOLD) {
+          pushUndo();
           shapeDrag = g;
           startX = ev.clientX;
           startY = ev.clientY;
@@ -1389,6 +1699,7 @@
       if (shapeDrag) {
         const tr = trash.getBoundingClientRect();
         if (ev.clientX >= tr.left && ev.clientX <= tr.right && ev.clientY >= tr.top && ev.clientY <= tr.bottom) {
+          pushUndo();
           shapeDrag.remove();
         }
         trash.classList.remove('drag-over');
@@ -1444,8 +1755,36 @@
     const type = ev.dataTransfer.getData('application/x-shape-type');
     if (!type) return;
     ensureWorkspaceSize();
+    pushUndo();
     const [x, y] = getWorkspacePoint(ev);
     createShape(type, x, y);
+  });
+
+  workspace.addEventListener('click', function (ev) {
+    if (ev.target !== workspace) return;
+    const [px, py] = getWorkspacePoint(ev);
+    const hit = getClosestEdgeAcrossShapes(px, py);
+    if (hit) {
+      if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
+      const cx = ev.clientX;
+      const cy = ev.clientY;
+      contextMenuTimeout = setTimeout(function () {
+        contextMenuTimeout = null;
+        showEdgeContextMenu(hit.g, hit.edgeIndex, cx, cy);
+      }, CLICK_MENU_DELAY);
+    }
+  });
+
+  workspace.addEventListener('dblclick', function (ev) {
+    if (ev.target !== workspace) return;
+    ev.preventDefault();
+    if (contextMenuTimeout) {
+      clearTimeout(contextMenuTimeout);
+      contextMenuTimeout = null;
+    }
+    const [px, py] = getWorkspacePoint(ev);
+    const hit = getClosestEdgeAcrossShapes(px, py);
+    if (hit) openEdgeLabelEditor(hit.g, hit.edgeIndex);
   });
 
   trash.addEventListener('dragover', function (ev) {
@@ -1459,6 +1798,16 @@
   trash.addEventListener('drop', function (ev) {
     ev.preventDefault();
     trash.classList.remove('drag-over');
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.ctrlKey && ev.key === 'z') {
+      ev.preventDefault();
+      undo();
+    } else if (ev.ctrlKey && ev.key === 'y') {
+      ev.preventDefault();
+      redo();
+    }
   });
 
   window.addEventListener('resize', ensureWorkspaceSize);
