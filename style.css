@@ -110,9 +110,13 @@ body {
 
 .shape-group .shape-body {
   fill: #fff;
-  stroke: #000;
-  stroke-width: 2;
+  stroke: none;
   transition: fill 0.15s;
+}
+
+.shape-group .shape-edge {
+  fill: none;
+  pointer-events: none;
 }
 
 .shape-group:hover .shape-body {
@@ -173,4 +177,60 @@ body {
   border-radius: 2px;
   outline: none;
   box-sizing: border-box;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 8px 0;
+  min-width: 160px;
+}
+
+.context-menu .context-menu-title {
+  padding: 4px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #666;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.context-menu .context-menu-row {
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu .context-menu-row label {
+  font-size: 13px;
+  min-width: 70px;
+}
+
+.context-menu select {
+  flex: 1;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
+.context-menu .context-menu-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.context-menu .context-menu-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid #ccc;
+  cursor: pointer;
+}
+
+.context-menu .context-menu-color-swatch:hover {
+  border-color: #333;
 }
