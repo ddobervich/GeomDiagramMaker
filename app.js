@@ -16,6 +16,7 @@
 
   const VERTEX_SIZES = [2, 3, 4, 5, 6, 8];
   const PRESET_COLORS = ['#000000', '#0066cc', '#cc0000', '#009933', '#9933cc', '#ff6600'];
+  const GRAYSCALE_COLORS = ['#333333', '#808080', '#c0c0c0'];
   const CLICK_MENU_DELAY = 250;
 
   let contextMenuTimeout = null;
@@ -65,19 +66,37 @@
       const rowSize = document.createElement('div');
       rowSize.className = 'context-menu-row';
       rowSize.innerHTML = '<label>Point size</label>';
-      const sel = document.createElement('select');
-      VERTEX_SIZES.forEach(function (n) {
-        const opt = document.createElement('option');
-        opt.value = n;
-        opt.textContent = n;
-        if (n === r) opt.selected = true;
-        sel.appendChild(opt);
+      const minR = 1, maxR = 12;
+      let currentR = Math.max(minR, Math.min(maxR, r));
+      const sizeDisplay = document.createElement('span');
+      sizeDisplay.className = 'context-menu-size-value';
+      sizeDisplay.textContent = currentR;
+      const btnMinus = document.createElement('button');
+      btnMinus.type = 'button';
+      btnMinus.className = 'context-menu-size-btn';
+      btnMinus.textContent = '−';
+      const btnPlus = document.createElement('button');
+      btnPlus.type = 'button';
+      btnPlus.className = 'context-menu-size-btn';
+      btnPlus.textContent = '+';
+      function applyVertexSize(val) {
+        currentR = val;
+        sizeDisplay.textContent = currentR;
+        circle.setAttribute('r', currentR);
+        circle.setAttribute('data-size', String(currentR));
+        btnMinus.disabled = currentR <= minR;
+        btnPlus.disabled = currentR >= maxR;
+      }
+      btnMinus.addEventListener('click', function () {
+        if (currentR > minR) applyVertexSize(currentR - 1);
       });
-      sel.addEventListener('change', function () {
-        circle.setAttribute('r', sel.value);
-        circle.setAttribute('data-size', sel.value);
+      btnPlus.addEventListener('click', function () {
+        if (currentR < maxR) applyVertexSize(currentR + 1);
       });
-      rowSize.appendChild(sel);
+      applyVertexSize(currentR);
+      rowSize.appendChild(btnMinus);
+      rowSize.appendChild(sizeDisplay);
+      rowSize.appendChild(btnPlus);
       menu.appendChild(rowSize);
       const rowColor = document.createElement('div');
       rowColor.className = 'context-menu-row';
@@ -111,6 +130,24 @@
       colorWrap.appendChild(colorInput);
       rowColor.appendChild(colorWrap);
       menu.appendChild(rowColor);
+      const rowGray = document.createElement('div');
+      rowGray.className = 'context-menu-row';
+      rowGray.innerHTML = '<label>Grayscale</label>';
+      const grayWrap = document.createElement('div');
+      grayWrap.className = 'context-menu-colors';
+      GRAYSCALE_COLORS.forEach(function (hex) {
+        const swatch = document.createElement('span');
+        swatch.className = 'context-menu-color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.addEventListener('click', function () {
+          circle.style.fill = hex;
+          circle.style.stroke = hex === '#333333' ? '#fff' : '#333';
+          circle.setAttribute('data-color', hex);
+        });
+        grayWrap.appendChild(swatch);
+      });
+      rowGray.appendChild(grayWrap);
+      menu.appendChild(rowGray);
     });
   }
 
@@ -127,21 +164,102 @@
       const rowWidth = document.createElement('div');
       rowWidth.className = 'context-menu-row';
       rowWidth.innerHTML = '<label>Line width</label>';
-      const sel = document.createElement('select');
-      [1, 2, 3, 4, 5].forEach(function (n) {
-        const opt = document.createElement('option');
-        opt.value = n;
-        opt.textContent = n;
-        if (String(n) === String(strokeWidth)) opt.selected = true;
-        sel.appendChild(opt);
+      const minW = 1, maxW = 10;
+      let currentW = Math.max(minW, Math.min(maxW, parseInt(strokeWidth, 10) || 2));
+      const widthDisplay = document.createElement('span');
+      widthDisplay.className = 'context-menu-size-value';
+      widthDisplay.textContent = currentW;
+      const btnMinus = document.createElement('button');
+      btnMinus.type = 'button';
+      btnMinus.className = 'context-menu-size-btn';
+      btnMinus.textContent = '−';
+      const btnPlus = document.createElement('button');
+      btnPlus.type = 'button';
+      btnPlus.className = 'context-menu-size-btn';
+      btnPlus.textContent = '+';
+      function applyEdgeWidth(val) {
+        currentW = val;
+        widthDisplay.textContent = currentW;
+        line.style.strokeWidth = val;
+        line.setAttribute('stroke-width', String(val));
+        line.setAttribute('data-stroke-width', String(val));
+        var da = (line.getAttribute('data-stroke-dasharray') || '').trim();
+        if (da.indexOf('0,') === 0 || da.indexOf('0 ,') === 0) {
+          var gap = Math.max(Math.round(val * 2.2), 4);
+          var dottedVal = '0, ' + gap;
+          line.style.strokeDasharray = dottedVal;
+          line.setAttribute('stroke-dasharray', dottedVal);
+          line.setAttribute('data-stroke-dasharray', dottedVal);
+        }
+        btnMinus.disabled = currentW <= minW;
+        btnPlus.disabled = currentW >= maxW;
+      }
+      btnMinus.addEventListener('click', function () {
+        if (currentW > minW) applyEdgeWidth(currentW - 1);
       });
-      sel.addEventListener('change', function () {
-        line.style.strokeWidth = sel.value;
-        line.setAttribute('stroke-width', sel.value);
-        line.setAttribute('data-stroke-width', sel.value);
+      btnPlus.addEventListener('click', function () {
+        if (currentW < maxW) applyEdgeWidth(currentW + 1);
       });
-      rowWidth.appendChild(sel);
+      applyEdgeWidth(currentW);
+      rowWidth.appendChild(btnMinus);
+      rowWidth.appendChild(widthDisplay);
+      rowWidth.appendChild(btnPlus);
       menu.appendChild(rowWidth);
+      const rowStyle = document.createElement('div');
+      rowStyle.className = 'context-menu-row';
+      rowStyle.innerHTML = '<label>Line style</label>';
+      const dasharray = (line.getAttribute('data-stroke-dasharray') || line.getAttribute('stroke-dasharray') || '').trim();
+      const linecap = (line.getAttribute('data-stroke-linecap') || line.getAttribute('stroke-linecap') || '').trim();
+      const isDotted = (linecap === 'round' && (dasharray.indexOf('0,') === 0 || dasharray.indexOf('0 ,') === 0)) || dasharray === '2,2' || dasharray === '1,2' || dasharray === '1, 2';
+      const isDashed = !isDotted && (dasharray === '8,4' || (dasharray.indexOf(',') !== -1 && dasharray !== ''));
+      const isSolid = !dasharray || dasharray === 'none' || (!isDashed && !isDotted);
+      function dottedGap(w) {
+        return Math.max(Math.round(w * 2.2), 4);
+      }
+      function setLineStyle(value, dasharrayValue) {
+        if (value === 'dotted') {
+          var gap = dottedGap(currentW);
+          var dottedVal = '0, ' + gap;
+          line.style.strokeLinecap = 'round';
+          line.style.strokeDasharray = dottedVal;
+          line.setAttribute('stroke-linecap', 'round');
+          line.setAttribute('stroke-dasharray', dottedVal);
+          line.setAttribute('data-stroke-linecap', 'round');
+          line.setAttribute('data-stroke-dasharray', dottedVal);
+          btnDotted.classList.add('context-menu-style-active');
+          btnSolid.classList.remove('context-menu-style-active');
+          btnDashed.classList.remove('context-menu-style-active');
+        } else {
+          line.style.strokeLinecap = value === 'solid' ? 'butt' : 'butt';
+          line.setAttribute('stroke-linecap', 'butt');
+          line.setAttribute('data-stroke-linecap', 'butt');
+          line.style.strokeDasharray = dasharrayValue;
+          line.setAttribute('stroke-dasharray', dasharrayValue);
+          line.setAttribute('data-stroke-dasharray', dasharrayValue);
+          [btnSolid, btnDashed, btnDotted].forEach(function (b) { b.classList.remove('context-menu-style-active'); });
+          if (dasharrayValue === '') btnSolid.classList.add('context-menu-style-active');
+          else if (dasharrayValue === '8,4') btnDashed.classList.add('context-menu-style-active');
+        }
+      }
+      const btnSolid = document.createElement('button');
+      btnSolid.type = 'button';
+      btnSolid.className = 'context-menu-style-btn' + (isSolid ? ' context-menu-style-active' : '');
+      btnSolid.textContent = 'Solid';
+      btnSolid.addEventListener('click', function () { setLineStyle('solid', ''); });
+      const btnDashed = document.createElement('button');
+      btnDashed.type = 'button';
+      btnDashed.className = 'context-menu-style-btn' + (isDashed ? ' context-menu-style-active' : '');
+      btnDashed.textContent = 'Dashed';
+      btnDashed.addEventListener('click', function () { setLineStyle('dashed', '8,4'); });
+      const btnDotted = document.createElement('button');
+      btnDotted.type = 'button';
+      btnDotted.className = 'context-menu-style-btn' + (isDotted ? ' context-menu-style-active' : '');
+      btnDotted.textContent = 'Dotted';
+      btnDotted.addEventListener('click', function () { setLineStyle('dotted'); });
+      rowStyle.appendChild(btnSolid);
+      rowStyle.appendChild(btnDashed);
+      rowStyle.appendChild(btnDotted);
+      menu.appendChild(rowStyle);
       const rowColor = document.createElement('div');
       rowColor.className = 'context-menu-row';
       rowColor.innerHTML = '<label>Color</label>';
@@ -171,6 +289,23 @@
       colorWrap.appendChild(colorInput);
       rowColor.appendChild(colorWrap);
       menu.appendChild(rowColor);
+      const rowGray = document.createElement('div');
+      rowGray.className = 'context-menu-row';
+      rowGray.innerHTML = '<label>Grayscale</label>';
+      const grayWrap = document.createElement('div');
+      grayWrap.className = 'context-menu-colors';
+      GRAYSCALE_COLORS.forEach(function (hex) {
+        const swatch = document.createElement('span');
+        swatch.className = 'context-menu-color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.addEventListener('click', function () {
+          line.style.stroke = hex;
+          line.setAttribute('data-stroke', hex);
+        });
+        grayWrap.appendChild(swatch);
+      });
+      rowGray.appendChild(grayWrap);
+      menu.appendChild(rowGray);
     });
   }
 
