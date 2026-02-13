@@ -20,6 +20,7 @@
   const CLICK_MENU_DELAY = 250;
 
   let contextMenuTimeout = null;
+  let altitudeDrawingMode = null;
 
   function hideContextMenu() {
     contextMenuEl.style.display = 'none';
@@ -148,7 +149,158 @@
       });
       rowGray.appendChild(grayWrap);
       menu.appendChild(rowGray);
+      const rowAltitude = document.createElement('div');
+      rowAltitude.className = 'context-menu-row';
+      rowAltitude.innerHTML = '<label>Tools</label>';
+      const btnAltitude = document.createElement('button');
+      btnAltitude.type = 'button';
+      btnAltitude.className = 'context-menu-style-btn';
+      btnAltitude.textContent = 'Draw an altitude';
+      btnAltitude.addEventListener('click', function () {
+        hideContextMenu();
+        startAltitudeDrawing(circle);
+      });
+      rowAltitude.appendChild(btnAltitude);
+      menu.appendChild(rowAltitude);
     });
+  }
+
+  function perpendicularPointToLine(px, py, x1, y1, x2, y2) {
+    const vx = x2 - x1;
+    const vy = y2 - y1;
+    const wx = px - x1;
+    const wy = py - y1;
+    const c1 = wx * vx + wy * vy;
+    const c2 = vx * vx + vy * vy;
+    if (c2 < 1e-10) return null;
+    const t = c1 / c2;
+    return {
+      x: x1 + t * vx,
+      y: y1 + t * vy,
+      t: t
+    };
+  }
+
+  function isPerpendicular(vx, vy, ex1, ey1, ex2, ey2) {
+    const edgeVecX = ex2 - ex1;
+    const edgeVecY = ey2 - ey1;
+    const dot = vx * edgeVecX + vy * edgeVecY;
+    const edgeLen = Math.hypot(edgeVecX, edgeVecY);
+    const vertexLen = Math.hypot(vx, vy);
+    if (edgeLen < 1e-10 || vertexLen < 1e-10) return false;
+    const cosAngle = Math.abs(dot / (edgeLen * vertexLen));
+    return cosAngle < 0.1;
+  }
+
+  function startAltitudeDrawing(circle) {
+    const shapeGroup = circle.closest('.shape-group');
+    if (!shapeGroup) return;
+    const vertexIndex = parseInt(circle.getAttribute('data-index'), 10);
+    const vx = parseFloat(circle.getAttribute('cx'));
+    const vy = parseFloat(circle.getAttribute('cy'));
+    const tempLine = document.createElementNS(SVG_NS, 'line');
+    tempLine.setAttribute('x1', vx);
+    tempLine.setAttribute('y1', vy);
+    tempLine.setAttribute('x2', vx);
+    tempLine.setAttribute('y2', vy);
+    tempLine.setAttribute('stroke', '#666');
+    tempLine.setAttribute('stroke-width', '2');
+    tempLine.setAttribute('stroke-dasharray', '8,4');
+    tempLine.setAttribute('class', 'altitude-temp');
+    workspace.appendChild(tempLine);
+    altitudeDrawingMode = {
+      shapeGroup: shapeGroup,
+      vertexIndex: vertexIndex,
+      vertexX: vx,
+      vertexY: vy,
+      tempLine: tempLine,
+      snappedEdge: null,
+      snappedPoint: null
+    };
+    function updateAltitude(ev) {
+      if (!altitudeDrawingMode) return;
+      const [mx, my] = getWorkspacePoint(ev);
+      const points = getVertexCoords(shapeGroup);
+      const n = points.length;
+      let bestSnap = null;
+      let bestDist = Infinity;
+      const SNAP_THRESHOLD = 20;
+      const PERP_THRESHOLD = 0.1;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        if (i === vertexIndex || j === vertexIndex) continue;
+        const perp = perpendicularPointToLine(vx, vy, points[i][0], points[i][1], points[j][0], points[j][1]);
+        if (!perp || perp.t < -0.1 || perp.t > 1.1) continue;
+        const distToPerp = Math.hypot(mx - perp.x, my - perp.y);
+        const vecX = perp.x - vx;
+        const vecY = perp.y - vy;
+        if (isPerpendicular(vecX, vecY, points[i][0], points[i][1], points[j][0], points[j][1]) && distToPerp < SNAP_THRESHOLD && distToPerp < bestDist) {
+          bestDist = distToPerp;
+          bestSnap = { edgeIndex: i, x: perp.x, y: perp.y, t: perp.t };
+        }
+      }
+      if (bestSnap) {
+        tempLine.setAttribute('x2', bestSnap.x);
+        tempLine.setAttribute('y2', bestSnap.y);
+        altitudeDrawingMode.snappedEdge = bestSnap.edgeIndex;
+        altitudeDrawingMode.snappedPoint = { x: bestSnap.x, y: bestSnap.y, t: bestSnap.t };
+      } else {
+        tempLine.setAttribute('x2', mx);
+        tempLine.setAttribute('y2', my);
+        altitudeDrawingMode.snappedEdge = null;
+        altitudeDrawingMode.snappedPoint = null;
+      }
+    }
+    function finishAltitude(ev) {
+      if (!altitudeDrawingMode) return;
+      if (ev.target.closest('#context-menu') || ev.target.closest('.vertex-label-editor')) return;
+      const t = ev.target;
+      const isVertexOrEdge = t.classList.contains('vertex') || t.classList.contains('shape-edge');
+      if (isVertexOrEdge) {
+        tempLine.remove();
+        altitudeDrawingMode = null;
+        document.removeEventListener('mousemove', updateAltitude);
+        document.removeEventListener('click', finishAltitude, true);
+        document.removeEventListener('keydown', cancelAltitude);
+        return;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (altitudeDrawingMode.snappedPoint) {
+        const altLine = document.createElementNS(SVG_NS, 'line');
+        altLine.setAttribute('x1', altitudeDrawingMode.vertexX);
+        altLine.setAttribute('y1', altitudeDrawingMode.vertexY);
+        altLine.setAttribute('x2', altitudeDrawingMode.snappedPoint.x);
+        altLine.setAttribute('y2', altitudeDrawingMode.snappedPoint.y);
+        altLine.setAttribute('stroke', '#666');
+        altLine.setAttribute('stroke-width', '2');
+        altLine.setAttribute('stroke-dasharray', '8,4');
+        altLine.setAttribute('class', 'altitude-line');
+        altLine.setAttribute('data-vertex-index', String(altitudeDrawingMode.vertexIndex));
+        altLine.setAttribute('data-edge-index', String(altitudeDrawingMode.snappedEdge));
+        altLine.setAttribute('data-edge-t', String(altitudeDrawingMode.snappedPoint.t));
+        shapeGroup.appendChild(altLine);
+      }
+      tempLine.remove();
+      altitudeDrawingMode = null;
+      document.removeEventListener('mousemove', updateAltitude);
+      document.removeEventListener('click', finishAltitude, true);
+      document.removeEventListener('keydown', cancelAltitude);
+    }
+    function cancelAltitude(ev) {
+      if (!altitudeDrawingMode) return;
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        tempLine.remove();
+        altitudeDrawingMode = null;
+        document.removeEventListener('mousemove', updateAltitude);
+        document.removeEventListener('click', finishAltitude);
+        document.removeEventListener('keydown', cancelAltitude);
+      }
+    }
+    document.addEventListener('mousemove', updateAltitude);
+    document.addEventListener('click', finishAltitude, true);
+    document.addEventListener('keydown', cancelAltitude);
   }
 
   function showEdgeContextMenu(shapeGroup, edgeIndex, clientX, clientY) {
@@ -452,6 +604,38 @@
     }
     updateLabelPositions(g);
     updateEdgeLabelPositions(g);
+    updateAltitudeLines(g);
+  }
+
+  function updateAltitudeLines(g) {
+    const circles = g.querySelectorAll('.vertex');
+    const points = Array.from(circles).map(c => [
+      parseFloat(c.getAttribute('cx')),
+      parseFloat(c.getAttribute('cy'))
+    ]);
+    const n = points.length;
+    const altitudeLines = g.querySelectorAll('.altitude-line');
+    altitudeLines.forEach(function (altLine) {
+      const vertexIndex = parseInt(altLine.getAttribute('data-vertex-index'), 10);
+      const edgeIndex = parseInt(altLine.getAttribute('data-edge-index'), 10);
+      const t = parseFloat(altLine.getAttribute('data-edge-t'));
+      if (isNaN(vertexIndex) || isNaN(edgeIndex) || isNaN(t) || vertexIndex < 0 || vertexIndex >= n || edgeIndex < 0 || edgeIndex >= n) return;
+      const vx = points[vertexIndex][0];
+      const vy = points[vertexIndex][1];
+      const i = edgeIndex;
+      const j = (edgeIndex + 1) % n;
+      const ex1 = points[i][0];
+      const ey1 = points[i][1];
+      const ex2 = points[j][0];
+      const ey2 = points[j][1];
+      const perp = perpendicularPointToLine(vx, vy, ex1, ey1, ex2, ey2);
+      if (perp) {
+        altLine.setAttribute('x1', vx);
+        altLine.setAttribute('y1', vy);
+        altLine.setAttribute('x2', perp.x);
+        altLine.setAttribute('y2', perp.y);
+      }
+    });
   }
 
   const EDGE_LABEL_OFFSET_X = 0;
@@ -525,6 +709,7 @@
 
     g.querySelectorAll('.vertex').forEach(circle => {
       circle.addEventListener('mousedown', function (ev) {
+        if (altitudeDrawingMode) return;
         ev.preventDefault();
         ev.stopPropagation();
         pendingVertex = this;
@@ -974,6 +1159,7 @@
 
     g.addEventListener('mousedown', function (ev) {
       if (ev.target.classList.contains('vertex')) return;
+      if (altitudeDrawingMode) return;
       ev.preventDefault();
       startShapeDrag(ev);
       document.addEventListener('mousemove', moveShapeDrag);

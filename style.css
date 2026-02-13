@@ -163,6 +163,14 @@ body {
   cursor: grabbing;
 }
 
+.altitude-temp {
+  pointer-events: none;
+}
+
+.shape-group .altitude-line {
+  pointer-events: none;
+}
+
 .vertex-label-editor {
   overflow: visible;
 }

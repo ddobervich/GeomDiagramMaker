@@ -1,0 +1,3 @@
+{"location":"app.js:finishAltitude","message":"Altitude click","data":{"targetTag":"polygon","targetClass":{},"isWorkspace":false,"hasSnapped":true,"isShapeGroup":true},"timestamp":1770996928320,"hypothesisId":"A"}
+{"location":"app.js:finishAltitude","message":"Altitude click","data":{"targetTag":"polygon","targetClass":{},"isWorkspace":false,"hasSnapped":true,"isShapeGroup":true,"isVertex":false,"isEdge":false},"timestamp":1770996978711,"hypothesisId":"A"}
+{"location":"app.js:finishAltitude","message":"Created altitude line","data":{"x1":188,"y1":136,"x2":188,"y2":280},"timestamp":1770996978712,"hypothesisId":"B"}
