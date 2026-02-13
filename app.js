@@ -13,6 +13,7 @@
   const trash = document.getElementById('trash');
   const contextMenuEl = document.getElementById('context-menu');
   let shapeIdCounter = 0;
+  let altitudeIdCounter = 0;
 
   const VERTEX_SIZES = [2, 3, 4, 5, 6, 8];
   const PRESET_COLORS = ['#000000', '#0066cc', '#cc0000', '#009933', '#9933cc', '#ff6600'];
@@ -267,19 +268,42 @@
       ev.preventDefault();
       ev.stopPropagation();
       if (altitudeDrawingMode.snappedPoint) {
+        const aid = String(++altitudeIdCounter);
+        const x1 = altitudeDrawingMode.vertexX;
+        const y1 = altitudeDrawingMode.vertexY;
+        const x2 = altitudeDrawingMode.snappedPoint.x;
+        const y2 = altitudeDrawingMode.snappedPoint.y;
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2;
         const altLine = document.createElementNS(SVG_NS, 'line');
-        altLine.setAttribute('x1', altitudeDrawingMode.vertexX);
-        altLine.setAttribute('y1', altitudeDrawingMode.vertexY);
-        altLine.setAttribute('x2', altitudeDrawingMode.snappedPoint.x);
-        altLine.setAttribute('y2', altitudeDrawingMode.snappedPoint.y);
+        altLine.setAttribute('x1', x1);
+        altLine.setAttribute('y1', y1);
+        altLine.setAttribute('x2', x2);
+        altLine.setAttribute('y2', y2);
         altLine.setAttribute('stroke', '#666');
         altLine.setAttribute('stroke-width', '2');
         altLine.setAttribute('stroke-dasharray', '8,4');
         altLine.setAttribute('class', 'altitude-line');
+        altLine.setAttribute('data-altitude-id', aid);
         altLine.setAttribute('data-vertex-index', String(altitudeDrawingMode.vertexIndex));
         altLine.setAttribute('data-edge-index', String(altitudeDrawingMode.snappedEdge));
         altLine.setAttribute('data-edge-t', String(altitudeDrawingMode.snappedPoint.t));
-        shapeGroup.appendChild(altLine);
+        const altLabelsGroup = shapeGroup.querySelector('.altitude-labels');
+        shapeGroup.insertBefore(altLine, altLabelsGroup);
+        if (altLabelsGroup) {
+          const shapePoints = getVertexCoords(shapeGroup);
+          const offset = getAltitudeLabelOffset(mx, my, x1, y1, x2, y2, shapePoints);
+          const label = document.createElementNS(SVG_NS, 'text');
+          label.setAttribute('class', 'altitude-label');
+          label.setAttribute('data-altitude-id', aid);
+          label.setAttribute('data-offset-dx', String(offset.dx));
+          label.setAttribute('data-offset-dy', String(offset.dy));
+          label.setAttribute('x', mx + offset.dx);
+          label.setAttribute('y', my + offset.dy);
+          label.setAttribute('text-anchor', 'middle');
+          label.setAttribute('dominant-baseline', 'middle');
+          altLabelsGroup.appendChild(label);
+        }
       }
       tempLine.remove();
       altitudeDrawingMode = null;
@@ -569,12 +593,27 @@
     }
     g.appendChild(edgeLabelsGroup);
 
+    const altitudeLabelsGroup = document.createElementNS(SVG_NS, 'g');
+    altitudeLabelsGroup.setAttribute('class', 'altitude-labels');
+    g.appendChild(altitudeLabelsGroup);
+
     enableVertexDrag(g);
     enableVertexLabels(g);
     enableLabelDrag(g);
     enableEdgeLabels(g);
     enableEdgeLabelDrag(g);
+    enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
+    g.addEventListener('dblclick', function (ev) {
+      if (!ev.target.classList.contains('altitude-line')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (contextMenuTimeout) {
+        clearTimeout(contextMenuTimeout);
+        contextMenuTimeout = null;
+      }
+      openAltitudeLabelEditor(g, ev.target);
+    });
     workspace.appendChild(g);
     return g;
   }
@@ -634,6 +673,18 @@
         altLine.setAttribute('y1', vy);
         altLine.setAttribute('x2', perp.x);
         altLine.setAttribute('y2', perp.y);
+        const aid = altLine.getAttribute('data-altitude-id');
+        if (aid) {
+          const mx = (vx + perp.x) / 2;
+          const my = (vy + perp.y) / 2;
+          const labelEl = g.querySelector('.altitude-label[data-altitude-id="' + aid + '"]');
+          if (labelEl) {
+            const dx = labelEl.hasAttribute('data-offset-dx') ? parseFloat(labelEl.getAttribute('data-offset-dx')) : 0;
+            const dy = labelEl.hasAttribute('data-offset-dy') ? parseFloat(labelEl.getAttribute('data-offset-dy')) : 0;
+            labelEl.setAttribute('x', mx + dx);
+            labelEl.setAttribute('y', my + dy);
+          }
+        }
       }
     });
   }
@@ -682,6 +733,45 @@
     ]);
   }
 
+  function pointInPolygon(px, py, points) {
+    const n = points.length;
+    let inside = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = points[i][0], yi = points[i][1];
+      const xj = points[j][0], yj = points[j][1];
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
+  const ALTITUDE_LABEL_OFFSET = 18;
+  const INSIDE_TEST_SCALE = 1.2;
+
+  function getAltitudeLabelOffset(mx, my, vx, vy, fx, fy, shapePoints) {
+    const dx = fx - vx;
+    const dy = fy - vy;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const perpX = -uy;
+    const perpY = ux;
+    const offset = ALTITUDE_LABEL_OFFSET;
+    const sideA = { dx: perpX * offset, dy: perpY * offset };
+    const sideB = { dx: -perpX * offset, dy: -perpY * offset };
+    const testScale = INSIDE_TEST_SCALE;
+    const insideA = pointInPolygon(mx + sideA.dx * testScale, my + sideA.dy * testScale, shapePoints);
+    const insideB = pointInPolygon(mx + sideB.dx * testScale, my + sideB.dy * testScale, shapePoints);
+    if (insideA && !insideB) return sideA;
+    if (!insideA && insideB) return sideB;
+    if (insideA && insideB) return sideA;
+    const cx = shapePoints.reduce((s, p) => s + p[0], 0) / shapePoints.length;
+    const cy = shapePoints.reduce((s, p) => s + p[1], 0) / shapePoints.length;
+    const toCenterX = cx - mx;
+    const toCenterY = cy - my;
+    const dist = Math.hypot(toCenterX, toCenterY) || 1;
+    return { dx: (toCenterX / dist) * offset, dy: (toCenterY / dist) * offset };
+  }
+
   function distanceToSegment(px, py, x1, y1, x2, y2) {
     const vx = x2 - x1;
     const vy = y2 - y1;
@@ -704,8 +794,10 @@
   function enableVertexDrag(g) {
     let dragging = null;
     let pendingVertex = null;
+    let pendingVertexShift = false;
     let lastClickedVertex = null;
     let startX, startY, startCx, startCy;
+    let scalingShape = null;
 
     g.querySelectorAll('.vertex').forEach(circle => {
       circle.addEventListener('mousedown', function (ev) {
@@ -713,6 +805,7 @@
         ev.preventDefault();
         ev.stopPropagation();
         pendingVertex = this;
+        pendingVertexShift = ev.shiftKey;
         startX = ev.clientX;
         startY = ev.clientY;
         startCx = parseFloat(this.getAttribute('cx'));
@@ -740,7 +833,28 @@
     });
 
     document.addEventListener('mousemove', function (ev) {
-      if (dragging) {
+      if (scalingShape) {
+        const [mx, my] = getWorkspacePoint(ev);
+        const cx = scalingShape.centerX;
+        const cy = scalingShape.centerY;
+        const pts = scalingShape.startPoints;
+        const i = scalingShape.draggedIndex;
+        const dx0 = pts[i][0] - cx;
+        const dy0 = pts[i][1] - cy;
+        const dist0 = Math.hypot(dx0, dy0) || 1e-6;
+        const dx1 = mx - cx;
+        const dy1 = my - cy;
+        const dist1 = Math.hypot(dx1, dy1);
+        const s = Math.max(0.2, Math.min(5, dist1 / dist0));
+        const circles = scalingShape.g.querySelectorAll('.vertex');
+        circles.forEach((c, idx) => {
+          const px = pts[idx][0];
+          const py = pts[idx][1];
+          c.setAttribute('cx', cx + (px - cx) * s);
+          c.setAttribute('cy', cy + (py - cy) * s);
+        });
+        updatePolygonFromVertices(scalingShape.g);
+      } else if (dragging) {
         const rect = workspace.getBoundingClientRect();
         const scaleX = workspace.width.baseVal.value / rect.width;
         const scaleY = workspace.height.baseVal.value / rect.height;
@@ -757,20 +871,36 @@
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
         if (Math.hypot(dx, dy) >= VERTEX_DRAG_THRESHOLD) {
-          dragging = pendingVertex;
+          if (pendingVertexShift) {
+            const shapeGroup = pendingVertex.closest('.shape-group');
+            const startPoints = getVertexCoords(shapeGroup);
+            const centerX = startPoints.reduce((s, p) => s + p[0], 0) / startPoints.length;
+            const centerY = startPoints.reduce((s, p) => s + p[1], 0) / startPoints.length;
+            scalingShape = {
+              g: shapeGroup,
+              centerX: centerX,
+              centerY: centerY,
+              startPoints: startPoints,
+              draggedIndex: parseInt(pendingVertex.getAttribute('data-index'), 10)
+            };
+          } else {
+            dragging = pendingVertex;
+            startCx = parseFloat(dragging.getAttribute('cx'));
+            startCy = parseFloat(dragging.getAttribute('cy'));
+          }
           pendingVertex = null;
+          pendingVertexShift = false;
           startX = ev.clientX;
           startY = ev.clientY;
-          startCx = parseFloat(dragging.getAttribute('cx'));
-          startCy = parseFloat(dragging.getAttribute('cy'));
         }
       }
     });
 
     document.addEventListener('mouseup', function () {
-      if (pendingVertex && !dragging) lastClickedVertex = pendingVertex;
+      if (pendingVertex && !dragging && !scalingShape) lastClickedVertex = pendingVertex;
       pendingVertex = null;
       dragging = null;
+      scalingShape = null;
     });
   }
 
@@ -960,6 +1090,48 @@
     });
   }
 
+  function openAltitudeLabelEditor(shapeGroup, altLine, editorX, editorY) {
+    const aid = altLine.getAttribute('data-altitude-id');
+    if (!aid) return;
+    const textEl = shapeGroup.querySelector('.altitude-label[data-altitude-id="' + aid + '"]');
+    if (!textEl) return;
+    const currentLabel = textEl.textContent || textEl.getAttribute('data-label') || '';
+    const tx = parseFloat(textEl.getAttribute('x'));
+    const ty = parseFloat(textEl.getAttribute('y'));
+    if (editorX == null) editorX = tx;
+    if (editorY == null) editorY = ty - 18;
+
+    const fo = document.createElementNS(SVG_NS, 'foreignObject');
+    fo.setAttribute('x', editorX);
+    fo.setAttribute('y', editorY);
+    fo.setAttribute('width', 200);
+    fo.setAttribute('height', 36);
+    fo.setAttribute('class', 'vertex-label-editor');
+    fo.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentLabel;
+    input.className = 'vertex-label-input';
+    fo.appendChild(input);
+    workspace.appendChild(fo);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const value = input.value.trim();
+      textEl.textContent = value;
+      textEl.setAttribute('data-label', value);
+      fo.remove();
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
+    });
+  }
+
   function enableEdgeLabels(g) {
     const polygon = g.querySelector('.shape-body');
     if (polygon) {
@@ -1050,6 +1222,89 @@
         const ty = parseFloat(draggingLabel.getAttribute('y'));
         draggingLabel.setAttribute('data-offset-dx', tx - mx);
         draggingLabel.setAttribute('data-offset-dy', ty - my);
+      }
+      draggingLabel = null;
+      pendingLabelDrag = null;
+    });
+  }
+
+  function enableAltitudeLabelDrag(g) {
+    let draggingLabel = null;
+    let pendingLabelDrag = null;
+    let startX, startY, startTextX, startTextY;
+    const DRAG_THRESHOLD = 3;
+
+    g.addEventListener('dblclick', function (ev) {
+      if (!ev.target.classList.contains('altitude-label')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (contextMenuTimeout) {
+        clearTimeout(contextMenuTimeout);
+        contextMenuTimeout = null;
+      }
+      const aid = ev.target.getAttribute('data-altitude-id');
+      const altLine = g.querySelector('.altitude-line[data-altitude-id="' + aid + '"]');
+      if (altLine) {
+        const x = parseFloat(ev.target.getAttribute('x'));
+        const y = parseFloat(ev.target.getAttribute('y'));
+        openAltitudeLabelEditor(g, altLine, x, y - 18);
+      }
+    });
+
+    g.addEventListener('mousedown', function (ev) {
+      if (!ev.target.classList.contains('altitude-label')) return;
+      ev.stopPropagation();
+      pendingLabelDrag = ev.target;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      startTextX = parseFloat(ev.target.getAttribute('x'));
+      startTextY = parseFloat(ev.target.getAttribute('y'));
+    });
+
+    document.addEventListener('mousemove', function (ev) {
+      if (draggingLabel) {
+        const rect = workspace.getBoundingClientRect();
+        const scaleX = workspace.width.baseVal.value / rect.width;
+        const scaleY = workspace.height.baseVal.value / rect.height;
+        const dx = (ev.clientX - startX) * scaleX;
+        const dy = (ev.clientY - startY) * scaleY;
+        draggingLabel.setAttribute('x', startTextX + dx);
+        draggingLabel.setAttribute('y', startTextY + dy);
+        startX = ev.clientX;
+        startY = ev.clientY;
+        startTextX = parseFloat(draggingLabel.getAttribute('x'));
+        startTextY = parseFloat(draggingLabel.getAttribute('y'));
+      } else if (pendingLabelDrag) {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (Math.hypot(dx, dy) >= DRAG_THRESHOLD) {
+          draggingLabel = pendingLabelDrag;
+          pendingLabelDrag = null;
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startTextX = parseFloat(draggingLabel.getAttribute('x'));
+          startTextY = parseFloat(draggingLabel.getAttribute('y'));
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', function (ev) {
+      if (draggingLabel) {
+        const shapeGroup = draggingLabel.closest('.shape-group');
+        const aid = draggingLabel.getAttribute('data-altitude-id');
+        const altLine = shapeGroup ? shapeGroup.querySelector('.altitude-line[data-altitude-id="' + aid + '"]') : null;
+        if (altLine) {
+          const x1 = parseFloat(altLine.getAttribute('x1'));
+          const y1 = parseFloat(altLine.getAttribute('y1'));
+          const x2 = parseFloat(altLine.getAttribute('x2'));
+          const y2 = parseFloat(altLine.getAttribute('y2'));
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
+          const tx = parseFloat(draggingLabel.getAttribute('x'));
+          const ty = parseFloat(draggingLabel.getAttribute('y'));
+          draggingLabel.setAttribute('data-offset-dx', tx - mx);
+          draggingLabel.setAttribute('data-offset-dy', ty - my);
+        }
       }
       draggingLabel = null;
       pendingLabelDrag = null;

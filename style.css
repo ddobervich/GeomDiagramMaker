@@ -168,7 +168,20 @@ body {
 }
 
 .shape-group .altitude-line {
-  pointer-events: none;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.shape-group .altitude-label {
+  font-size: 22pt;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  fill: #000;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.shape-group .altitude-label:active {
+  cursor: grabbing;
 }
 
 .vertex-label-editor {
