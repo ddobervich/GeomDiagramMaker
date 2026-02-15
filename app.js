@@ -1049,7 +1049,7 @@
     ]);
   }
 
-  const RIGHT_ANGLE_COS_THRESHOLD = 0.15;
+  const RIGHT_ANGLE_COS_THRESHOLD = 0.08;
   const RIGHT_ANGLE_MARK_SIZE = 24;
 
   function isNearRightAngle(g, vertexIndex) {
@@ -1133,10 +1133,17 @@
   function updateRightAngleMarks(g) {
     const points = getVertexCoords(g);
     const n = points.length;
-    const marks = g.querySelectorAll('.right-angle-mark');
+    const marks = Array.from(g.querySelectorAll('.right-angle-mark'));
     marks.forEach(function (mark) {
       const vertexIndex = parseInt(mark.getAttribute('data-vertex-index'), 10);
-      if (vertexIndex < 0 || vertexIndex >= n) return;
+      if (vertexIndex < 0 || vertexIndex >= n) {
+        mark.remove();
+        return;
+      }
+      if (!isNearRightAngle(g, vertexIndex)) {
+        mark.remove();
+        return;
+      }
       const prev = (vertexIndex - 1 + n) % n;
       const next = (vertexIndex + 1) % n;
       const v = points[vertexIndex];
@@ -1223,14 +1230,17 @@
   }
 
   const VERTEX_DRAG_THRESHOLD = 3;
+  const ROTATION_CURSOR = "url('data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="none" stroke="black" stroke-width="2" d="M12 5 a7 7 0 1 1 0 14 a7 7 0 0 1 0 -14"/><path fill="black" d="M12 3 L14.5 9 L12 7 L9.5 9 Z"/></svg>') + "') 12 12, auto";
 
   function enableVertexDrag(g) {
     let dragging = null;
     let pendingVertex = null;
     let pendingVertexShift = false;
+    let pendingVertexCtrl = false;
     let lastClickedVertex = null;
     let startX, startY, startCx, startCy;
     let scalingShape = null;
+    let rotatingShape = null;
 
     g.querySelectorAll('.vertex').forEach(circle => {
       circle.addEventListener('mousedown', function (ev) {
@@ -1239,6 +1249,7 @@
         ev.stopPropagation();
         pendingVertex = this;
         pendingVertexShift = ev.shiftKey;
+        pendingVertexCtrl = ev.ctrlKey;
         startX = ev.clientX;
         startY = ev.clientY;
         startCx = parseFloat(this.getAttribute('cx'));
@@ -1266,7 +1277,27 @@
     });
 
     document.addEventListener('mousemove', function (ev) {
-      if (scalingShape) {
+      if (rotatingShape) {
+        const [mx, my] = getWorkspacePoint(ev);
+        const cx = rotatingShape.centerX;
+        const cy = rotatingShape.centerY;
+        const currentAngle = Math.atan2(my - cy, mx - cx);
+        const delta = currentAngle - rotatingShape.startAngle;
+        const cos = Math.cos(delta);
+        const sin = Math.sin(delta);
+        const pts = rotatingShape.startPoints;
+        const circles = rotatingShape.g.querySelectorAll('.vertex');
+        circles.forEach(function (c, idx) {
+          const px = pts[idx][0];
+          const py = pts[idx][1];
+          const rx = px - cx;
+          const ry = py - cy;
+          c.setAttribute('cx', cx + rx * cos - ry * sin);
+          c.setAttribute('cy', cy + rx * sin + ry * cos);
+        });
+        updatePolygonFromVertices(rotatingShape.g);
+        document.body.style.cursor = ROTATION_CURSOR;
+      } else if (scalingShape) {
         const [mx, my] = getWorkspacePoint(ev);
         const cx = scalingShape.centerX;
         const cy = scalingShape.centerY;
@@ -1305,9 +1336,22 @@
         const dy = ev.clientY - startY;
         if (Math.hypot(dx, dy) >= VERTEX_DRAG_THRESHOLD) {
           pushUndo();
-          if (pendingVertexShift) {
-            const shapeGroup = pendingVertex.closest('.shape-group');
-            const startPoints = getVertexCoords(shapeGroup);
+          const shapeGroup = pendingVertex.closest('.shape-group');
+          const startPoints = getVertexCoords(shapeGroup);
+          if (pendingVertexCtrl) {
+            const centerX = startPoints.reduce((s, p) => s + p[0], 0) / startPoints.length;
+            const centerY = startPoints.reduce((s, p) => s + p[1], 0) / startPoints.length;
+            const [mx, my] = getWorkspacePoint(ev);
+            rotatingShape = {
+              g: shapeGroup,
+              centerX: centerX,
+              centerY: centerY,
+              startPoints: startPoints,
+              startAngle: Math.atan2(my - centerY, mx - centerX),
+              draggedIndex: parseInt(pendingVertex.getAttribute('data-index'), 10)
+            };
+            document.body.style.cursor = ROTATION_CURSOR;
+          } else if (pendingVertexShift) {
             const centerX = startPoints.reduce((s, p) => s + p[0], 0) / startPoints.length;
             const centerY = startPoints.reduce((s, p) => s + p[1], 0) / startPoints.length;
             scalingShape = {
@@ -1324,17 +1368,28 @@
           }
           pendingVertex = null;
           pendingVertexShift = false;
+          pendingVertexCtrl = false;
           startX = ev.clientX;
           startY = ev.clientY;
         }
+      } else if (!rotatingShape && ev.target.closest && ev.target.closest('.shape-group .vertex') && ev.ctrlKey) {
+        document.body.style.cursor = ROTATION_CURSOR;
+      } else if (!rotatingShape) {
+        document.body.style.cursor = '';
       }
     });
 
     document.addEventListener('mouseup', function () {
-      if (pendingVertex && !dragging && !scalingShape) lastClickedVertex = pendingVertex;
+      if (pendingVertex && !dragging && !scalingShape && !rotatingShape) lastClickedVertex = pendingVertex;
       pendingVertex = null;
       dragging = null;
       scalingShape = null;
+      rotatingShape = null;
+      document.body.style.cursor = '';
+    });
+
+    document.addEventListener('keyup', function (ev) {
+      if (ev.key === 'Control') document.body.style.cursor = '';
     });
   }
 
@@ -1953,6 +2008,41 @@
     trash.classList.remove('drag-over');
   });
 
+  const helpOverlay = document.getElementById('help-overlay');
+  const helpHint = document.getElementById('help-hint');
+
+  function isTypingElement(el) {
+    if (!el || !el.closest) return false;
+    const tag = el.tagName && el.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || el.isContentEditable) return true;
+    return false;
+  }
+
+  function showHelp() {
+    if (helpOverlay) {
+      helpOverlay.style.display = 'flex';
+      helpOverlay.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function hideHelp() {
+    if (helpOverlay) {
+      helpOverlay.style.display = 'none';
+      helpOverlay.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function toggleHelp() {
+    if (helpOverlay && helpOverlay.style.display !== 'none') hideHelp();
+    else showHelp();
+  }
+
+  if (helpOverlay) {
+    helpOverlay.addEventListener('click', function (ev) {
+      if (ev.target === helpOverlay) hideHelp();
+    });
+  }
+
   document.addEventListener('keydown', function (ev) {
     if (ev.ctrlKey && ev.key === 'z') {
       ev.preventDefault();
@@ -1960,6 +2050,12 @@
     } else if (ev.ctrlKey && ev.key === 'y') {
       ev.preventDefault();
       redo();
+    } else if (ev.key === 'h' && !isTypingElement(ev.target)) {
+      ev.preventDefault();
+      toggleHelp();
+    } else if (ev.key === 'Escape' && helpOverlay && helpOverlay.style.display !== 'none') {
+      ev.preventDefault();
+      hideHelp();
     }
   });
 

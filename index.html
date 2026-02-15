@@ -30,6 +30,26 @@
   </aside>
   <div class="workspace-wrap">
     <svg id="workspace"></svg>
+    <div id="help-hint" class="help-hint">Press 'h' for help</div>
+  </div>
+
+  <div id="help-overlay" class="help-overlay" style="display: none;" aria-hidden="true">
+    <div class="help-modal">
+      <h2 class="help-title">Controls</h2>
+      <ul class="help-list">
+        <li><strong>Add shape</strong> — Drag a shape from the palette onto the workspace.</li>
+        <li><strong>Delete shape</strong> — Drag a shape to the trash icon in the palette.</li>
+        <li><strong>Move vertex</strong> — Drag a vertex to change the shape.</li>
+        <li><strong>Rotate shape</strong> — Hold <kbd>Ctrl</kbd> and drag a vertex (cursor shows rotation icon).</li>
+        <li><strong>Scale shape</strong> — Hold <kbd>Shift</kbd> and drag a vertex.</li>
+        <li><strong>Vertex menu</strong> — Single-click a vertex for point size, color, “Draw an altitude”, and “Right angle mark” (if the angle is near 90°).</li>
+        <li><strong>Edge menu</strong> — Single-click an edge for line width, style (solid/dashed/dotted), and color.</li>
+        <li><strong>Draw altitude</strong> — From the vertex menu choose “Draw an altitude”, then click an edge. Double-click an altitude line to edit its label.</li>
+        <li><strong>Vertex & edge labels</strong> — Drag labels to reposition them.</li>
+        <li><strong>Undo / Redo</strong> — <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</li>
+      </ul>
+      <p class="help-close">Press <kbd>h</kbd> or <kbd>Escape</kbd> to close</p>
+    </div>
   </div>
 
   <div id="context-menu" class="context-menu" style="display: none;"></div>
