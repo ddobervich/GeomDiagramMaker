@@ -184,6 +184,16 @@ body {
   cursor: grabbing;
 }
 
+.shape-group .right-angle-mark {
+  pointer-events: none;
+}
+
+.shape-group .right-angle-mark .right-angle-mark-line {
+  stroke: #000000 !important;
+  fill: none !important;
+  stroke-linecap: round !important;
+}
+
 .vertex-label-editor {
   overflow: visible;
 }

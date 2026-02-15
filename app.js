@@ -87,6 +87,11 @@
           offsetDy: labelEl && labelEl.hasAttribute('data-offset-dy') ? parseFloat(labelEl.getAttribute('data-offset-dy')) : 0
         });
       });
+      const rightAngleMarks = [];
+      g.querySelectorAll('.right-angle-mark').forEach(mark => {
+        const vi = parseInt(mark.getAttribute('data-vertex-index'), 10);
+        if (!isNaN(vi)) rightAngleMarks.push(vi);
+      });
       shapesState.push({
         shapeType,
         vertices,
@@ -94,7 +99,8 @@
         vertexStyles,
         edgeLabels,
         edgeStyles,
-        altitudes
+        altitudes,
+        rightAngleMarks
       });
     });
     return { shapes: shapesState, nextAltitudeId: maxAltitudeId + 1 };
@@ -237,6 +243,7 @@
         altitudeLabelsGroup.appendChild(label);
       }
     });
+    (s.rightAngleMarks || []).forEach(vi => addRightAngleMark(g, vi));
     enableVertexDrag(g);
     enableVertexLabels(g);
     enableLabelDrag(g);
@@ -430,6 +437,26 @@
         startAltitudeDrawing(circle);
       });
       rowAltitude.appendChild(btnAltitude);
+      const shapeGroup = circle.closest('.shape-group');
+      const vertexIndex = parseInt(circle.getAttribute('data-index'), 10);
+      if (shapeGroup && !isNaN(vertexIndex) && isNearRightAngle(shapeGroup, vertexIndex)) {
+        const existingMark = shapeGroup.querySelector('.right-angle-mark[data-vertex-index="' + vertexIndex + '"]');
+        const btnRightAngle = document.createElement('button');
+        btnRightAngle.type = 'button';
+        btnRightAngle.className = 'context-menu-style-btn';
+        btnRightAngle.textContent = existingMark ? 'Remove right angle mark' : 'Right angle mark';
+        btnRightAngle.addEventListener('click', function () {
+          hideContextMenu();
+          if (existingMark) {
+            existingMark.remove();
+            pushUndo();
+          } else {
+            addRightAngleMark(shapeGroup, vertexIndex);
+            pushUndo();
+          }
+        });
+        rowAltitude.appendChild(btnRightAngle);
+      }
       menu.appendChild(rowAltitude);
     });
   }
@@ -876,6 +903,14 @@
     altitudeLabelsGroup.setAttribute('class', 'altitude-labels');
     g.appendChild(altitudeLabelsGroup);
 
+    const rightAngleMarksGroup = document.createElementNS(SVG_NS, 'g');
+    rightAngleMarksGroup.setAttribute('class', 'right-angle-marks');
+    g.appendChild(rightAngleMarksGroup);
+
+    if (shapeType === 'right-triangle') {
+      addRightAngleMark(g, 0);
+    }
+
     enableVertexDrag(g);
     enableVertexLabels(g);
     enableLabelDrag(g);
@@ -923,6 +958,7 @@
     updateLabelPositions(g);
     updateEdgeLabelPositions(g);
     updateAltitudeLines(g);
+    updateRightAngleMarks(g);
   }
 
   function updateAltitudeLines(g) {
@@ -1011,6 +1047,123 @@
       parseFloat(c.getAttribute('cx')),
       parseFloat(c.getAttribute('cy'))
     ]);
+  }
+
+  const RIGHT_ANGLE_COS_THRESHOLD = 0.15;
+  const RIGHT_ANGLE_MARK_SIZE = 24;
+
+  function isNearRightAngle(g, vertexIndex) {
+    const points = getVertexCoords(g);
+    const n = points.length;
+    if (n < 3 || vertexIndex < 0 || vertexIndex >= n) return false;
+    const prev = (vertexIndex - 1 + n) % n;
+    const next = (vertexIndex + 1) % n;
+    const v = points[vertexIndex];
+    const p = points[prev];
+    const q = points[next];
+    const ux = p[0] - v[0];
+    const uy = p[1] - v[1];
+    const wx = q[0] - v[0];
+    const wy = q[1] - v[1];
+    const lu = Math.hypot(ux, uy) || 1e-6;
+    const lw = Math.hypot(wx, wy) || 1e-6;
+    const cosAngle = (ux * wx + uy * wy) / (lu * lw);
+    return Math.abs(cosAngle) < RIGHT_ANGLE_COS_THRESHOLD;
+  }
+
+  function polygonSignedArea(points) {
+    let area = 0;
+    const n = points.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area += points[i][0] * points[j][1] - points[j][0] * points[i][1];
+    }
+    return area * 0.5;
+  }
+
+  function addRightAngleMark(g, vertexIndex) {
+    if (g.querySelector('.right-angle-mark[data-vertex-index="' + vertexIndex + '"]')) return;
+    const points = getVertexCoords(g);
+    const n = points.length;
+    if (n < 3 || vertexIndex < 0 || vertexIndex >= n) return;
+    const prev = (vertexIndex - 1 + n) % n;
+    const next = (vertexIndex + 1) % n;
+    const v = points[vertexIndex];
+    const p = points[prev];
+    const q = points[next];
+    const s = RIGHT_ANGLE_MARK_SIZE;
+    let ux = (p[0] - v[0]) / (Math.hypot(p[0] - v[0], p[1] - v[1]) || 1e-6);
+    let uy = (p[1] - v[1]) / (Math.hypot(p[0] - v[0], p[1] - v[1]) || 1e-6);
+    let wx = (q[0] - v[0]) / (Math.hypot(q[0] - v[0], q[1] - v[1]) || 1e-6);
+    let wy = (q[1] - v[1]) / (Math.hypot(q[0] - v[0], q[1] - v[1]) || 1e-6);
+    // Offset segments: horizontal (parallel to u) moved by w toward center, vertical (parallel to w) moved by u toward center.
+    const xA = v[0] + wx * s;
+    const yA = v[1] + wy * s;
+    const xB = v[0] + wx * s + ux * s;
+    const yB = v[1] + wy * s + uy * s;
+    const xC = v[0] + ux * s;
+    const yC = v[1] + uy * s;
+    const xD = v[0] + ux * s + wx * s;
+    const yD = v[1] + uy * s + wy * s;
+    const mark = document.createElementNS(SVG_NS, 'g');
+    mark.setAttribute('class', 'right-angle-mark');
+    mark.setAttribute('data-vertex-index', String(vertexIndex));
+    const edgeLine = g.querySelector('.shape-edge');
+    const edgeStrokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'right-angle-mark-line');
+    path.setAttribute('d', 'M' + xA + ',' + yA + 'L' + xB + ',' + yB + 'M' + xC + ',' + yC + 'L' + xD + ',' + yD);
+    path.setAttributeNS(SVG_NS, 'stroke', '#000000');
+    path.setAttributeNS(SVG_NS, 'stroke-width', edgeStrokeWidth);
+    path.setAttributeNS(SVG_NS, 'fill', 'none');
+    path.style.setProperty('stroke', '#000000');
+    path.style.setProperty('stroke-width', edgeStrokeWidth + 'px');
+    path.style.setProperty('fill', 'none');
+    mark.appendChild(path);
+    let marksGroup = g.querySelector('.right-angle-marks');
+    if (!marksGroup) {
+      marksGroup = document.createElementNS(SVG_NS, 'g');
+      marksGroup.setAttribute('class', 'right-angle-marks');
+      g.appendChild(marksGroup);
+    }
+    marksGroup.appendChild(mark);
+    g.appendChild(marksGroup);
+  }
+
+  function updateRightAngleMarks(g) {
+    const points = getVertexCoords(g);
+    const n = points.length;
+    const marks = g.querySelectorAll('.right-angle-mark');
+    marks.forEach(function (mark) {
+      const vertexIndex = parseInt(mark.getAttribute('data-vertex-index'), 10);
+      if (vertexIndex < 0 || vertexIndex >= n) return;
+      const prev = (vertexIndex - 1 + n) % n;
+      const next = (vertexIndex + 1) % n;
+      const v = points[vertexIndex];
+      const p = points[prev];
+      const q = points[next];
+      const s = RIGHT_ANGLE_MARK_SIZE;
+      let ux = (p[0] - v[0]) / (Math.hypot(p[0] - v[0], p[1] - v[1]) || 1e-6);
+      let uy = (p[1] - v[1]) / (Math.hypot(p[0] - v[0], p[1] - v[1]) || 1e-6);
+      let wx = (q[0] - v[0]) / (Math.hypot(q[0] - v[0], q[1] - v[1]) || 1e-6);
+      let wy = (q[1] - v[1]) / (Math.hypot(q[0] - v[0], q[1] - v[1]) || 1e-6);
+      const xA = v[0] + wx * s;
+      const yA = v[1] + wy * s;
+      const xB = v[0] + wx * s + ux * s;
+      const yB = v[1] + wy * s + uy * s;
+      const xC = v[0] + ux * s;
+      const yC = v[1] + uy * s;
+      const xD = v[0] + ux * s + wx * s;
+      const yD = v[1] + uy * s + wy * s;
+      const path = mark.querySelector('.right-angle-mark-line');
+      if (path && path.setAttribute) {
+        const edgeLine = g.querySelector('.shape-edge');
+        const edgeStrokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+        path.setAttribute('d', 'M' + xA + ',' + yA + 'L' + xB + ',' + yB + 'M' + xC + ',' + yC + 'L' + xD + ',' + yD);
+        path.setAttributeNS(SVG_NS, 'stroke-width', edgeStrokeWidth);
+        path.style.setProperty('stroke-width', edgeStrokeWidth + 'px');
+      }
+    });
   }
 
   function pointInPolygon(px, py, points) {
