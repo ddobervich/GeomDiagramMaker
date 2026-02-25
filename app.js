@@ -6,7 +6,8 @@
     'parallelogram': [[0, 0], [1, 0], [0.85, 0.6], [-0.15, 0.6]],
     'trapezoid': [[0.15, 0], [0.85, 0], [1, 0.6], [0, 0.6]],
     'right-triangle': [[0, 0], [1, 0], [0, 0.6]],
-    'equilateral-triangle': [[0.5, 0], [1, 0.866], [0, 0.866]]
+    'equilateral-triangle': [[0.5, 0], [1, 0.866], [0, 0.866]],
+    'circle': [[0.5, 0.5], [1, 0.5]]
   };
 
   const workspace = document.getElementById('workspace');
@@ -116,35 +117,55 @@
     g.classList.add('shape-group');
     g.dataset.shapeId = id;
     g.dataset.shapeType = shapeType;
-    const pts = vertices.map(p => p.join(',')).join(' ');
-    const polygon = document.createElementNS(SVG_NS, 'polygon');
-    polygon.classList.add('shape-body');
-    polygon.setAttribute('points', pts);
-    polygon.setAttribute('stroke', 'none');
-    g.appendChild(polygon);
+    const isCircle = shapeType === 'circle';
+
+    if (isCircle && n >= 2) {
+      const cx = vertices[0][0];
+      const cy = vertices[0][1];
+      const r = Math.hypot(vertices[1][0] - cx, vertices[1][1] - cy) || 1;
+      const circleEl = document.createElementNS(SVG_NS, 'circle');
+      circleEl.classList.add('shape-body');
+      circleEl.setAttribute('cx', cx);
+      circleEl.setAttribute('cy', cy);
+      circleEl.setAttribute('r', r);
+      circleEl.setAttribute('fill', '#fff');
+      circleEl.setAttribute('stroke', '#000');
+      circleEl.setAttribute('stroke-width', '2');
+      g.appendChild(circleEl);
+    } else {
+      const pts = vertices.map(p => p.join(',')).join(' ');
+      const polygon = document.createElementNS(SVG_NS, 'polygon');
+      polygon.classList.add('shape-body');
+      polygon.setAttribute('points', pts);
+      polygon.setAttribute('stroke', 'none');
+      g.appendChild(polygon);
+    }
+
     const edgesGroup = document.createElementNS(SVG_NS, 'g');
     edgesGroup.setAttribute('class', 'shape-edges');
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('class', 'shape-edge');
-      line.setAttribute('data-edge-index', i);
-      line.setAttribute('x1', vertices[i][0]);
-      line.setAttribute('y1', vertices[i][1]);
-      line.setAttribute('x2', vertices[j][0]);
-      line.setAttribute('y2', vertices[j][1]);
-      const es = (s.edgeStyles && s.edgeStyles[i]) || {};
-      line.setAttribute('stroke', es.stroke || '#000');
-      line.setAttribute('stroke-width', String(es.strokeWidth || '2'));
-      if (es.strokeDasharray) {
-        line.setAttribute('data-stroke-dasharray', es.strokeDasharray);
-        line.setAttribute('stroke-dasharray', es.strokeDasharray);
+    if (!isCircle) {
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('class', 'shape-edge');
+        line.setAttribute('data-edge-index', i);
+        line.setAttribute('x1', vertices[i][0]);
+        line.setAttribute('y1', vertices[i][1]);
+        line.setAttribute('x2', vertices[j][0]);
+        line.setAttribute('y2', vertices[j][1]);
+        const es = (s.edgeStyles && s.edgeStyles[i]) || {};
+        line.setAttribute('stroke', es.stroke || '#000');
+        line.setAttribute('stroke-width', String(es.strokeWidth || '2'));
+        if (es.strokeDasharray) {
+          line.setAttribute('data-stroke-dasharray', es.strokeDasharray);
+          line.setAttribute('stroke-dasharray', es.strokeDasharray);
+        }
+        if (es.strokeLinecap) {
+          line.setAttribute('data-stroke-linecap', es.strokeLinecap);
+          line.setAttribute('stroke-linecap', es.strokeLinecap);
+        }
+        edgesGroup.appendChild(line);
       }
-      if (es.strokeLinecap) {
-        line.setAttribute('data-stroke-linecap', es.strokeLinecap);
-        line.setAttribute('stroke-linecap', es.strokeLinecap);
-      }
-      edgesGroup.appendChild(line);
     }
     g.appendChild(edgesGroup);
     vertices.forEach((p, i) => {
@@ -180,28 +201,31 @@
     g.appendChild(labelsGroup);
     const edgeLabelsGroup = document.createElementNS(SVG_NS, 'g');
     edgeLabelsGroup.setAttribute('class', 'edge-labels');
-    const eLabels = s.edgeLabels || [];
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const mx = (vertices[i][0] + vertices[j][0]) / 2;
-      const my = (vertices[i][1] + vertices[j][1]) / 2;
-      const el = eLabels[i] || {};
-      const text = document.createElementNS(SVG_NS, 'text');
-      text.setAttribute('class', 'edge-label');
-      text.setAttribute('data-edge-index', i);
-      text.setAttribute('x', mx + (el.offsetDx || 0));
-      text.setAttribute('y', my + (el.offsetDy || 0));
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('dominant-baseline', 'middle');
-      if (el.text) { text.textContent = el.text; text.setAttribute('data-label', el.text); }
-      text.setAttribute('data-offset-dx', String(el.offsetDx != null ? el.offsetDx : 0));
-      text.setAttribute('data-offset-dy', String(el.offsetDy != null ? el.offsetDy : 0));
-      edgeLabelsGroup.appendChild(text);
+    if (!isCircle) {
+      const eLabels = s.edgeLabels || [];
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const mx = (vertices[i][0] + vertices[j][0]) / 2;
+        const my = (vertices[i][1] + vertices[j][1]) / 2;
+        const el = eLabels[i] || {};
+        const text = document.createElementNS(SVG_NS, 'text');
+        text.setAttribute('class', 'edge-label');
+        text.setAttribute('data-edge-index', i);
+        text.setAttribute('x', mx + (el.offsetDx || 0));
+        text.setAttribute('y', my + (el.offsetDy || 0));
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        if (el.text) { text.textContent = el.text; text.setAttribute('data-label', el.text); }
+        text.setAttribute('data-offset-dx', String(el.offsetDx != null ? el.offsetDx : 0));
+        text.setAttribute('data-offset-dy', String(el.offsetDy != null ? el.offsetDy : 0));
+        edgeLabelsGroup.appendChild(text);
+      }
     }
     g.appendChild(edgeLabelsGroup);
     const altitudeLabelsGroup = document.createElementNS(SVG_NS, 'g');
     altitudeLabelsGroup.setAttribute('class', 'altitude-labels');
     g.appendChild(altitudeLabelsGroup);
+    if (!isCircle) {
     (s.altitudes || []).forEach((alt, idx) => {
       const aid = String(startAltitudeId + idx);
       const vx = vertices[alt.vertexIndex][0];
@@ -243,6 +267,7 @@
         altitudeLabelsGroup.appendChild(label);
       }
     });
+    }
     (s.rightAngleMarks || []).forEach(vi => addRightAngleMark(g, vi));
     enableVertexDrag(g);
     enableVertexLabels(g);
@@ -823,34 +848,53 @@
     g.dataset.shapeId = id;
     g.dataset.shapeType = shapeType;
 
-    const polygon = document.createElementNS(SVG_NS, 'polygon');
-    polygon.classList.add('shape-body');
-    polygon.setAttribute('points', coords.map(p => p.join(',')).join(' '));
-    polygon.setAttribute('stroke', 'none');
-    g.appendChild(polygon);
-
     const n = coords.length;
+    const isCircle = shapeType === 'circle';
+
+    if (isCircle) {
+      const cx = coords[0][0];
+      const cy = coords[0][1];
+      const r = Math.hypot(coords[1][0] - cx, coords[1][1] - cy) || 1;
+      const circleEl = document.createElementNS(SVG_NS, 'circle');
+      circleEl.classList.add('shape-body');
+      circleEl.setAttribute('cx', cx);
+      circleEl.setAttribute('cy', cy);
+      circleEl.setAttribute('r', r);
+      circleEl.setAttribute('fill', '#fff');
+      circleEl.setAttribute('stroke', '#000');
+      circleEl.setAttribute('stroke-width', '2');
+      g.appendChild(circleEl);
+    } else {
+      const polygon = document.createElementNS(SVG_NS, 'polygon');
+      polygon.classList.add('shape-body');
+      polygon.setAttribute('points', coords.map(p => p.join(',')).join(' '));
+      polygon.setAttribute('stroke', 'none');
+      g.appendChild(polygon);
+    }
+
     const edgesGroup = document.createElementNS(SVG_NS, 'g');
     edgesGroup.setAttribute('class', 'shape-edges');
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('class', 'shape-edge');
-      line.setAttribute('data-edge-index', i);
-      line.setAttribute('x1', coords[i][0]);
-      line.setAttribute('y1', coords[i][1]);
-      line.setAttribute('x2', coords[j][0]);
-      line.setAttribute('y2', coords[j][1]);
-      line.setAttribute('stroke', '#000');
-      line.setAttribute('stroke-width', '2');
-      edgesGroup.appendChild(line);
+    if (!isCircle) {
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('class', 'shape-edge');
+        line.setAttribute('data-edge-index', i);
+        line.setAttribute('x1', coords[i][0]);
+        line.setAttribute('y1', coords[i][1]);
+        line.setAttribute('x2', coords[j][0]);
+        line.setAttribute('y2', coords[j][1]);
+        line.setAttribute('stroke', '#000');
+        line.setAttribute('stroke-width', '2');
+        edgesGroup.appendChild(line);
+      }
     }
     g.appendChild(edgesGroup);
 
     coords.forEach((p, i) => {
       const circle = document.createElementNS(SVG_NS, 'circle');
       circle.classList.add('vertex');
-      circle.setAttribute('r', 3);
+      circle.setAttribute('r', isCircle && i === 0 ? 2 : 3);
       circle.setAttribute('cx', p[0]);
       circle.setAttribute('cy', p[1]);
       circle.setAttribute('data-index', i);
@@ -875,27 +919,29 @@
 
     const edgeLabelsGroup = document.createElementNS(SVG_NS, 'g');
     edgeLabelsGroup.setAttribute('class', 'edge-labels');
-    const cx = coords.reduce((s, p) => s + p[0], 0) / n;
-    const cy = coords.reduce((s, p) => s + p[1], 0) / n;
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const mx = (coords[i][0] + coords[j][0]) / 2;
-      const my = (coords[i][1] + coords[j][1]) / 2;
-      const outX = mx - cx;
-      const outY = my - cy;
-      const len = Math.hypot(outX, outY) || 1;
-      const dx = (outX / len) * EDGE_LABEL_OFFSET_DISTANCE;
-      const dy = (outY / len) * EDGE_LABEL_OFFSET_DISTANCE;
-      const text = document.createElementNS(SVG_NS, 'text');
-      text.setAttribute('class', 'edge-label');
-      text.setAttribute('data-edge-index', i);
-      text.setAttribute('data-offset-dx', String(dx));
-      text.setAttribute('data-offset-dy', String(dy));
-      text.setAttribute('x', mx + dx);
-      text.setAttribute('y', my + dy);
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('dominant-baseline', 'middle');
-      edgeLabelsGroup.appendChild(text);
+    if (!isCircle) {
+      const cx = coords.reduce((s, p) => s + p[0], 0) / n;
+      const cy = coords.reduce((s, p) => s + p[1], 0) / n;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const mx = (coords[i][0] + coords[j][0]) / 2;
+        const my = (coords[i][1] + coords[j][1]) / 2;
+        const outX = mx - cx;
+        const outY = my - cy;
+        const len = Math.hypot(outX, outY) || 1;
+        const dx = (outX / len) * EDGE_LABEL_OFFSET_DISTANCE;
+        const dy = (outY / len) * EDGE_LABEL_OFFSET_DISTANCE;
+        const text = document.createElementNS(SVG_NS, 'text');
+        text.setAttribute('class', 'edge-label');
+        text.setAttribute('data-edge-index', i);
+        text.setAttribute('data-offset-dx', String(dx));
+        text.setAttribute('data-offset-dy', String(dy));
+        text.setAttribute('x', mx + dx);
+        text.setAttribute('y', my + dy);
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        edgeLabelsGroup.appendChild(text);
+      }
     }
     g.appendChild(edgeLabelsGroup);
 
@@ -936,14 +982,27 @@
   const LABEL_OFFSET_Y = -8;
 
   function updatePolygonFromVertices(g) {
-    const polygon = g.querySelector('.shape-body');
+    const shapeBody = g.querySelector('.shape-body');
     const circles = g.querySelectorAll('.vertex');
     const points = Array.from(circles).map(c => [
       parseFloat(c.getAttribute('cx')),
       parseFloat(c.getAttribute('cy'))
     ]);
-    polygon.setAttribute('points', points.map(p => p.join(',')).join(' '));
     const n = points.length;
+
+    if (g.dataset.shapeType === 'circle' && n >= 2) {
+      const cx = points[0][0];
+      const cy = points[0][1];
+      const r = Math.hypot(points[1][0] - cx, points[1][1] - cy) || 1;
+      shapeBody.setAttribute('cx', cx);
+      shapeBody.setAttribute('cy', cy);
+      shapeBody.setAttribute('r', r);
+      updateLabelPositions(g);
+      return;
+    }
+
+    const polygon = shapeBody;
+    polygon.setAttribute('points', points.map(p => p.join(',')).join(' '));
     const edges = g.querySelectorAll('.shape-edge');
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
@@ -1913,7 +1972,7 @@
         trash.classList.remove('drag-over');
       } else if (pendingShapeDrag && !didMove && ev.target.classList.contains('shape-body')) {
         const [px, py] = getWorkspacePoint(ev);
-        const edgeIndex = getClosestEdgeIndex(g, px, py);
+        const edgeIndex = g.dataset.shapeType === 'circle' ? null : getClosestEdgeIndex(g, px, py);
         if (edgeIndex !== null) {
           if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
           const cx = ev.clientX;

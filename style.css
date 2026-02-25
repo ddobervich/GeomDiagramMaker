@@ -114,6 +114,11 @@ body {
   transition: fill 0.15s;
 }
 
+.shape-group circle.shape-body {
+  stroke: #000;
+  stroke-width: 2;
+}
+
 .shape-group .shape-edge {
   fill: none;
   pointer-events: none;
