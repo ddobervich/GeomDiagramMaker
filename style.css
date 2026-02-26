@@ -168,7 +168,9 @@ body {
   cursor: grabbing;
 }
 
-.altitude-temp {
+.altitude-temp,
+.chord-temp,
+.apothem-temp {
   pointer-events: none;
 }
 
@@ -178,6 +180,18 @@ body {
 }
 
 .shape-group .chord-line {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.shape-group .shape-center {
+  fill: #333;
+  stroke: none;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.shape-group .apothem-line {
   pointer-events: stroke;
   cursor: pointer;
 }

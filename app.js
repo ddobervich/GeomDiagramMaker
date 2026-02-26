@@ -39,6 +39,7 @@
   let contextMenuTimeout = null;
   let altitudeDrawingMode = null;
   let chordDrawingMode = null;
+  let apothemDrawingMode = null;
 
   const MAX_UNDO = 50;
   let undoStack = [];
@@ -179,6 +180,23 @@
           });
         });
         state.chords = chords;
+        const apothems = [];
+        g.querySelectorAll('.apothem-line').forEach(function (line) {
+          const edgeIndex = parseInt(line.getAttribute('data-edge-index'), 10);
+          if (!isNaN(edgeIndex) && edgeIndex >= 0) {
+            const labelEl = g.querySelector('.apothem-label[data-edge-index="' + edgeIndex + '"]');
+            const labelText = labelEl ? (labelEl.textContent || labelEl.getAttribute('data-label') || '') : '';
+            apothems.push({ edgeIndex: edgeIndex, labelText: labelText });
+          }
+        });
+        state.apothems = apothems;
+        const centerEl = g.querySelector('.shape-center');
+        if (centerEl) {
+          state.centerPointStyle = {
+            r: parseInt(centerEl.getAttribute('data-size') || centerEl.getAttribute('r') || '2', 10),
+            fill: centerEl.getAttribute('data-color') || centerEl.style.fill || '#333'
+          };
+        }
       }
       shapesState.push(state);
     });
@@ -259,6 +277,20 @@
       circle.setAttribute('pointer-events', 'all');
       g.appendChild(circle);
     });
+    if (shapeType === 'regular-polygon') {
+      const cx = vertices.reduce((s, p) => s + p[0], 0) / n;
+      const cy = vertices.reduce((s, p) => s + p[1], 0) / n;
+      const centerCircle = document.createElementNS(SVG_NS, 'circle');
+      centerCircle.setAttribute('class', 'shape-center');
+      centerCircle.setAttribute('cx', cx);
+      centerCircle.setAttribute('cy', cy);
+      const cp = (s.centerPointStyle || {});
+      centerCircle.setAttribute('r', String(cp.r != null ? cp.r : 2));
+      centerCircle.setAttribute('data-size', String(cp.r != null ? cp.r : 2));
+      if (cp.fill) { centerCircle.style.fill = cp.fill; centerCircle.setAttribute('data-color', cp.fill); }
+      centerCircle.setAttribute('pointer-events', 'all');
+      g.appendChild(centerCircle);
+    }
     const labelsGroup = document.createElementNS(SVG_NS, 'g');
     labelsGroup.setAttribute('class', 'vertex-labels');
     const vLabels = s.vertexLabels || [];
@@ -470,7 +502,8 @@
         chordLine.setAttribute('data-stroke', c.stroke || '#333');
         chordLine.setAttribute('stroke-width', c.strokeWidth || '2');
         chordLine.setAttribute('data-stroke-width', c.strokeWidth || '2');
-        if (c.strokeDasharray) { chordLine.setAttribute('stroke-dasharray', c.strokeDasharray); chordLine.setAttribute('data-stroke-dasharray', c.strokeDasharray); }
+        chordLine.setAttribute('stroke-dasharray', c.strokeDasharray != null ? c.strokeDasharray : '8,4');
+        chordLine.setAttribute('data-stroke-dasharray', c.strokeDasharray != null ? c.strokeDasharray : '8,4');
         if (c.strokeLinecap) { chordLine.setAttribute('stroke-linecap', c.strokeLinecap); chordLine.setAttribute('data-stroke-linecap', c.strokeLinecap); }
         chordLine.setAttribute('pointer-events', 'stroke');
         chordLinesGroup.appendChild(chordLine);
@@ -489,6 +522,60 @@
         chordLabelsGroup.appendChild(chordLabel);
       });
     }
+    if (shapeType === 'regular-polygon' && s.apothems && s.apothems.length) {
+      const pts = vertices;
+      const n = pts.length;
+      const centerX = pts.reduce((s, p) => s + p[0], 0) / n;
+      const centerY = pts.reduce((s, p) => s + p[1], 0) / n;
+      let apothemLinesGroup = g.querySelector('.apothem-lines');
+      if (!apothemLinesGroup) {
+        apothemLinesGroup = document.createElementNS(SVG_NS, 'g');
+        apothemLinesGroup.setAttribute('class', 'apothem-lines');
+        g.insertBefore(apothemLinesGroup, altitudeLabelsGroup);
+      }
+      let apothemLabelsGroup = g.querySelector('.apothem-labels');
+      if (!apothemLabelsGroup && s.apothems.some(function (a) { return a.labelText; })) {
+        apothemLabelsGroup = document.createElementNS(SVG_NS, 'g');
+        apothemLabelsGroup.setAttribute('class', 'apothem-labels');
+        g.insertBefore(apothemLabelsGroup, apothemLinesGroup.nextSibling);
+      }
+      s.apothems.forEach(function (a) {
+        const edgeIndex = a.edgeIndex;
+        if (edgeIndex < 0 || edgeIndex >= n) return;
+        const midX = (pts[edgeIndex][0] + pts[(edgeIndex + 1) % n][0]) / 2;
+        const midY = (pts[edgeIndex][1] + pts[(edgeIndex + 1) % n][1]) / 2;
+        const apothemLine = document.createElementNS(SVG_NS, 'line');
+        apothemLine.setAttribute('class', 'apothem-line');
+        apothemLine.setAttribute('data-edge-index', String(edgeIndex));
+        apothemLine.setAttribute('x1', centerX);
+        apothemLine.setAttribute('y1', centerY);
+        apothemLine.setAttribute('x2', midX);
+        apothemLine.setAttribute('y2', midY);
+        apothemLine.setAttribute('stroke', '#333');
+        apothemLine.setAttribute('data-stroke', '#333');
+        apothemLine.setAttribute('stroke-width', '2');
+        apothemLine.setAttribute('data-stroke-width', '2');
+        apothemLine.setAttribute('stroke-dasharray', '8,4');
+        apothemLine.setAttribute('data-stroke-dasharray', '8,4');
+        apothemLine.setAttribute('pointer-events', 'stroke');
+        apothemLinesGroup.appendChild(apothemLine);
+        if (apothemLabelsGroup && a.labelText) {
+          const labelEl = document.createElementNS(SVG_NS, 'text');
+          labelEl.setAttribute('class', 'apothem-label edge-label');
+          labelEl.setAttribute('data-edge-index', String(edgeIndex));
+          labelEl.setAttribute('x', midX);
+          labelEl.setAttribute('y', midY);
+          labelEl.setAttribute('text-anchor', 'middle');
+          labelEl.setAttribute('dominant-baseline', 'middle');
+          labelEl.setAttribute('data-offset-dx', '0');
+          labelEl.setAttribute('data-offset-dy', '0');
+          labelEl.setAttribute('data-label', a.labelText);
+          labelEl.textContent = a.labelText;
+          labelEl.setAttribute('pointer-events', 'all');
+          apothemLabelsGroup.appendChild(labelEl);
+        }
+      });
+    }
     (s.rightAngleMarks || []).forEach(vi => addRightAngleMark(g, vi));
     enableVertexDrag(g);
     enableVertexLabels(g);
@@ -496,7 +583,10 @@
     enableEdgeLabels(g);
     enableEdgeLabelDrag(g);
     if (isCircle) enableCircleLineLabelDrag(g);
-    if (shapeType === 'regular-polygon') enableChordLabelDrag(g);
+    if (shapeType === 'regular-polygon') {
+      enableChordLabelDrag(g);
+      enableApothemLabelDrag(g);
+    }
     enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
     g.addEventListener('dblclick', function (ev) {
@@ -543,6 +633,26 @@
           const x = parseFloat(ev.target.getAttribute('x'));
           const y = parseFloat(ev.target.getAttribute('y'));
           openChordLabelEditor(g, chordLine, x, y - 18);
+        }
+        return;
+      }
+      if (ev.target.classList.contains('apothem-line')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        openApothemLabelEditor(g, ev.target);
+        return;
+      }
+      if (ev.target.classList.contains('apothem-label')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        const edgeIndex = ev.target.getAttribute('data-edge-index');
+        const apothemLine = g.querySelector('.apothem-line[data-edge-index="' + edgeIndex + '"]');
+        if (apothemLine) {
+          const x = parseFloat(ev.target.getAttribute('x'));
+          const y = parseFloat(ev.target.getAttribute('y'));
+          openApothemLabelEditor(g, apothemLine, x, y - 18);
         }
         return;
       }
@@ -1024,13 +1134,37 @@
     if (!shapeGroup || shapeGroup.dataset.shapeType !== 'regular-polygon') return;
     const fromVertexIndex = parseInt(vertexCircle.getAttribute('data-index'), 10);
     if (isNaN(fromVertexIndex)) return;
-    chordDrawingMode = { shapeGroup: shapeGroup, fromVertexIndex: fromVertexIndex };
+    const points = getVertexCoords(shapeGroup);
+    const vx = points[fromVertexIndex][0];
+    const vy = points[fromVertexIndex][1];
+    const tempLine = document.createElementNS(SVG_NS, 'line');
+    tempLine.setAttribute('x1', vx);
+    tempLine.setAttribute('y1', vy);
+    tempLine.setAttribute('x2', vx);
+    tempLine.setAttribute('y2', vy);
+    tempLine.setAttribute('stroke', '#666');
+    tempLine.setAttribute('stroke-width', '2');
+    tempLine.setAttribute('stroke-dasharray', '8,4');
+    tempLine.setAttribute('class', 'chord-temp');
+    workspace.appendChild(tempLine);
+    chordDrawingMode = { shapeGroup: shapeGroup, fromVertexIndex: fromVertexIndex, tempLine: tempLine };
+    function updateChordTemp(ev) {
+      if (!chordDrawingMode || !chordDrawingMode.tempLine) return;
+      const [mx, my] = getWorkspacePoint(ev);
+      chordDrawingMode.tempLine.setAttribute('x2', mx);
+      chordDrawingMode.tempLine.setAttribute('y2', my);
+    }
     function finishChord(ev) {
       if (!chordDrawingMode) return;
+      if (chordDrawingMode.tempLine) {
+        chordDrawingMode.tempLine.remove();
+        chordDrawingMode.tempLine = null;
+      }
       if (ev.target.closest('#context-menu') || ev.target.closest('.vertex-label-editor')) return;
       const t = ev.target;
       if (!t.classList.contains('vertex')) {
         chordDrawingMode = null;
+        document.removeEventListener('mousemove', updateChordTemp);
         document.removeEventListener('click', finishChord, true);
         document.removeEventListener('keydown', cancelChord);
         return;
@@ -1038,6 +1172,7 @@
       const g = t.closest('.shape-group');
       if (g !== chordDrawingMode.shapeGroup) {
         chordDrawingMode = null;
+        document.removeEventListener('mousemove', updateChordTemp);
         document.removeEventListener('click', finishChord, true);
         document.removeEventListener('keydown', cancelChord);
         return;
@@ -1045,6 +1180,7 @@
       const toVertexIndex = parseInt(t.getAttribute('data-index'), 10);
       if (toVertexIndex === chordDrawingMode.fromVertexIndex) {
         chordDrawingMode = null;
+        document.removeEventListener('mousemove', updateChordTemp);
         document.removeEventListener('click', finishChord, true);
         document.removeEventListener('keydown', cancelChord);
         return;
@@ -1067,6 +1203,7 @@
         const b = parseInt(line.getAttribute('data-vertex-b'), 10);
         if ((a === va && b === vb)) {
           chordDrawingMode = null;
+          document.removeEventListener('mousemove', updateChordTemp);
           document.removeEventListener('click', finishChord, true);
           document.removeEventListener('keydown', cancelChord);
           return;
@@ -1090,6 +1227,8 @@
       chordLine.setAttribute('data-stroke', '#333');
       chordLine.setAttribute('stroke-width', '2');
       chordLine.setAttribute('data-stroke-width', '2');
+      chordLine.setAttribute('stroke-dasharray', '8,4');
+      chordLine.setAttribute('data-stroke-dasharray', '8,4');
       chordLine.setAttribute('pointer-events', 'stroke');
       chordLinesGroup.appendChild(chordLine);
       let chordLabelsGroup = shapeGroup.querySelector('.chord-labels');
@@ -1113,6 +1252,7 @@
       chordLabel.setAttribute('pointer-events', 'all');
       chordLabelsGroup.appendChild(chordLabel);
       chordDrawingMode = null;
+      document.removeEventListener('mousemove', updateChordTemp);
       document.removeEventListener('click', finishChord, true);
       document.removeEventListener('keydown', cancelChord);
     }
@@ -1120,11 +1260,17 @@
       if (!chordDrawingMode) return;
       if (ev.key === 'Escape') {
         ev.preventDefault();
+        if (chordDrawingMode.tempLine) {
+          chordDrawingMode.tempLine.remove();
+          chordDrawingMode.tempLine = null;
+        }
         chordDrawingMode = null;
+        document.removeEventListener('mousemove', updateChordTemp);
         document.removeEventListener('click', finishChord, true);
         document.removeEventListener('keydown', cancelChord);
       }
     }
+    document.addEventListener('mousemove', updateChordTemp);
     document.addEventListener('click', finishChord, true);
     document.addEventListener('keydown', cancelChord);
   }
@@ -1293,6 +1439,223 @@
 
   function showChordContextMenu(shapeGroup, chordLine, clientX, clientY) {
     showLineStyleContextMenu(chordLine, 'Chord', clientX, clientY);
+  }
+
+  function showApothemContextMenu(shapeGroup, apothemLine, clientX, clientY) {
+    showLineStyleContextMenu(apothemLine, 'Apothem', clientX, clientY);
+  }
+
+  function showCenterPointContextMenu(shapeGroup, centerEl, clientX, clientY) {
+    const r = parseInt(centerEl.getAttribute('r') || centerEl.getAttribute('data-size') || '2', 10);
+    const fill = centerEl.getAttribute('data-color') || centerEl.getAttribute('fill') || window.getComputedStyle(centerEl).fill || '#333333';
+    showContextMenuAt(clientX, clientY, function (menu) {
+      const title = document.createElement('div');
+      title.className = 'context-menu-title';
+      title.textContent = 'Center';
+      menu.appendChild(title);
+      const rowSize = document.createElement('div');
+      rowSize.className = 'context-menu-row';
+      rowSize.innerHTML = '<label>Point size</label>';
+      const minR = 1, maxR = 8;
+      let currentR = Math.max(minR, Math.min(maxR, r));
+      const sizeDisplay = document.createElement('span');
+      sizeDisplay.className = 'context-menu-size-value';
+      sizeDisplay.textContent = currentR;
+      const btnMinus = document.createElement('button');
+      btnMinus.type = 'button';
+      btnMinus.className = 'context-menu-size-btn';
+      btnMinus.textContent = '−';
+      const btnPlus = document.createElement('button');
+      btnPlus.type = 'button';
+      btnPlus.className = 'context-menu-size-btn';
+      btnPlus.textContent = '+';
+      function applySize(val) {
+        currentR = val;
+        sizeDisplay.textContent = currentR;
+        centerEl.setAttribute('r', currentR);
+        centerEl.setAttribute('data-size', String(currentR));
+        btnMinus.disabled = currentR <= minR;
+        btnPlus.disabled = currentR >= maxR;
+      }
+      btnMinus.addEventListener('click', function () {
+        if (currentR > minR) applySize(currentR - 1);
+      });
+      btnPlus.addEventListener('click', function () {
+        if (currentR < maxR) applySize(currentR + 1);
+      });
+      applySize(currentR);
+      rowSize.appendChild(btnMinus);
+      rowSize.appendChild(sizeDisplay);
+      rowSize.appendChild(btnPlus);
+      menu.appendChild(rowSize);
+      const rowColor = document.createElement('div');
+      rowColor.className = 'context-menu-row';
+      rowColor.innerHTML = '<label>Color</label>';
+      const colorWrap = document.createElement('div');
+      colorWrap.className = 'context-menu-colors';
+      PRESET_COLORS.forEach(function (hex) {
+        const swatch = document.createElement('span');
+        swatch.className = 'context-menu-color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.addEventListener('click', function () {
+          centerEl.style.fill = hex;
+          centerEl.setAttribute('data-color', hex);
+        });
+        colorWrap.appendChild(swatch);
+      });
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.value = (fill.startsWith('#') ? fill : '#333333').slice(0, 7);
+      colorInput.style.width = '28px';
+      colorInput.style.height = '24px';
+      colorInput.style.border = 'none';
+      colorInput.style.cursor = 'pointer';
+      colorInput.addEventListener('input', function () {
+        const hex = colorInput.value;
+        centerEl.style.fill = hex;
+        centerEl.setAttribute('data-color', hex);
+      });
+      colorWrap.appendChild(colorInput);
+      rowColor.appendChild(colorWrap);
+      menu.appendChild(rowColor);
+      const rowGray = document.createElement('div');
+      rowGray.className = 'context-menu-row';
+      rowGray.innerHTML = '<label>Grayscale</label>';
+      const grayWrap = document.createElement('div');
+      grayWrap.className = 'context-menu-colors';
+      GRAYSCALE_COLORS.forEach(function (hex) {
+        const swatch = document.createElement('span');
+        swatch.className = 'context-menu-color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.addEventListener('click', function () {
+          centerEl.style.fill = hex;
+          centerEl.setAttribute('data-color', hex);
+        });
+        grayWrap.appendChild(swatch);
+      });
+      rowGray.appendChild(grayWrap);
+      menu.appendChild(rowGray);
+      const rowApothem = document.createElement('div');
+      rowApothem.className = 'context-menu-row';
+      rowApothem.innerHTML = '<label>Tools</label>';
+      const btnApothem = document.createElement('button');
+      btnApothem.type = 'button';
+      btnApothem.className = 'context-menu-style-btn';
+      btnApothem.textContent = 'Draw apothem';
+      btnApothem.addEventListener('click', function () {
+        hideContextMenu();
+        startApothemDrawing(shapeGroup);
+      });
+      rowApothem.appendChild(btnApothem);
+      menu.appendChild(rowApothem);
+    });
+  }
+
+  function startApothemDrawing(shapeGroup) {
+    if (!shapeGroup || shapeGroup.dataset.shapeType !== 'regular-polygon') return;
+    const points = getVertexCoords(shapeGroup);
+    const n = points.length;
+    const cx = points.reduce((s, p) => s + p[0], 0) / n;
+    const cy = points.reduce((s, p) => s + p[1], 0) / n;
+    const tempLine = document.createElementNS(SVG_NS, 'line');
+    tempLine.setAttribute('x1', cx);
+    tempLine.setAttribute('y1', cy);
+    tempLine.setAttribute('x2', cx);
+    tempLine.setAttribute('y2', cy);
+    tempLine.setAttribute('stroke', '#666');
+    tempLine.setAttribute('stroke-width', '2');
+    tempLine.setAttribute('stroke-dasharray', '8,4');
+    tempLine.setAttribute('class', 'apothem-temp');
+    workspace.appendChild(tempLine);
+    apothemDrawingMode = { shapeGroup: shapeGroup, tempLine: tempLine, n: n };
+    function updateApothemTemp(ev) {
+      if (!apothemDrawingMode || !apothemDrawingMode.tempLine) return;
+      const [mx, my] = getWorkspacePoint(ev);
+      apothemDrawingMode.tempLine.setAttribute('x2', mx);
+      apothemDrawingMode.tempLine.setAttribute('y2', my);
+    }
+    function finishApothem(ev) {
+      if (!apothemDrawingMode) return;
+      if (apothemDrawingMode.tempLine) {
+        apothemDrawingMode.tempLine.remove();
+        apothemDrawingMode.tempLine = null;
+      }
+      if (ev.target.closest('#context-menu') || ev.target.closest('.vertex-label-editor')) return;
+      const shapeGroup = apothemDrawingMode.shapeGroup;
+      const [px, py] = getWorkspacePoint(ev);
+      let edgeIndex = null;
+      if (ev.target.classList.contains('shape-edge') && ev.target.closest('.shape-group') === shapeGroup) {
+        edgeIndex = parseInt(ev.target.getAttribute('data-edge-index'), 10);
+      }
+      if (edgeIndex == null || isNaN(edgeIndex)) edgeIndex = getClosestEdgeIndex(shapeGroup, px, py);
+      if (edgeIndex == null || edgeIndex < 0 || edgeIndex >= apothemDrawingMode.n) {
+        apothemDrawingMode = null;
+        document.removeEventListener('mousemove', updateApothemTemp);
+        document.removeEventListener('click', finishApothem, true);
+        document.removeEventListener('keydown', cancelApothem);
+        return;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      const shapeGroupForApothem = apothemDrawingMode.shapeGroup;
+      const pts = getVertexCoords(shapeGroupForApothem);
+      const centerX = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const centerY = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      let apothemLinesGroup = shapeGroupForApothem.querySelector('.apothem-lines');
+      if (!apothemLinesGroup) {
+        apothemLinesGroup = document.createElementNS(SVG_NS, 'g');
+        apothemLinesGroup.setAttribute('class', 'apothem-lines');
+        const altLabels = shapeGroupForApothem.querySelector('.altitude-labels');
+        shapeGroupForApothem.insertBefore(apothemLinesGroup, altLabels);
+      }
+      const existing = shapeGroupForApothem.querySelector('.apothem-line[data-edge-index="' + edgeIndex + '"]');
+      if (existing) {
+        apothemDrawingMode = null;
+        document.removeEventListener('mousemove', updateApothemTemp);
+        document.removeEventListener('click', finishApothem, true);
+        document.removeEventListener('keydown', cancelApothem);
+        return;
+      }
+      pushUndo();
+      const midX = (pts[edgeIndex][0] + pts[(edgeIndex + 1) % pts.length][0]) / 2;
+      const midY = (pts[edgeIndex][1] + pts[(edgeIndex + 1) % pts.length][1]) / 2;
+      const apothemLine = document.createElementNS(SVG_NS, 'line');
+      apothemLine.setAttribute('class', 'apothem-line');
+      apothemLine.setAttribute('data-edge-index', String(edgeIndex));
+      apothemLine.setAttribute('x1', centerX);
+      apothemLine.setAttribute('y1', centerY);
+      apothemLine.setAttribute('x2', midX);
+      apothemLine.setAttribute('y2', midY);
+      apothemLine.setAttribute('stroke', '#333');
+      apothemLine.setAttribute('data-stroke', '#333');
+      apothemLine.setAttribute('stroke-width', '2');
+      apothemLine.setAttribute('data-stroke-width', '2');
+      apothemLine.setAttribute('stroke-dasharray', '8,4');
+      apothemLine.setAttribute('data-stroke-dasharray', '8,4');
+      apothemLine.setAttribute('pointer-events', 'stroke');
+      apothemLinesGroup.appendChild(apothemLine);
+      apothemDrawingMode = null;
+      document.removeEventListener('mousemove', updateApothemTemp);
+      document.removeEventListener('click', finishApothem, true);
+      document.removeEventListener('keydown', cancelApothem);
+    }
+    function cancelApothem(ev) {
+      if (!apothemDrawingMode) return;
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        if (apothemDrawingMode.tempLine) {
+          apothemDrawingMode.tempLine.remove();
+          apothemDrawingMode.tempLine = null;
+        }
+        apothemDrawingMode = null;
+        document.removeEventListener('mousemove', updateApothemTemp);
+        document.removeEventListener('click', finishApothem, true);
+        document.removeEventListener('keydown', cancelApothem);
+      }
+    }
+    document.addEventListener('mousemove', updateApothemTemp);
+    document.addEventListener('click', finishApothem, true);
+    document.addEventListener('keydown', cancelApothem);
   }
 
   function showCircleLineContextMenu(shapeGroup, line, clientX, clientY) {
@@ -1529,6 +1892,19 @@
       g.appendChild(circle);
     });
 
+    if (shapeType === 'regular-polygon') {
+      const cx = coords.reduce((s, p) => s + p[0], 0) / n;
+      const cy = coords.reduce((s, p) => s + p[1], 0) / n;
+      const centerCircle = document.createElementNS(SVG_NS, 'circle');
+      centerCircle.setAttribute('class', 'shape-center');
+      centerCircle.setAttribute('cx', cx);
+      centerCircle.setAttribute('cy', cy);
+      centerCircle.setAttribute('r', 2);
+      centerCircle.setAttribute('data-size', '2');
+      centerCircle.setAttribute('pointer-events', 'all');
+      g.appendChild(centerCircle);
+    }
+
     const labelsGroup = document.createElementNS(SVG_NS, 'g');
     labelsGroup.setAttribute('class', 'vertex-labels');
     coords.forEach((p, i) => {
@@ -1596,7 +1972,10 @@
     enableEdgeLabels(g);
     enableEdgeLabelDrag(g);
     if (isCircle) enableCircleLineLabelDrag(g);
-    if (shapeType === 'regular-polygon') enableChordLabelDrag(g);
+    if (shapeType === 'regular-polygon') {
+      enableChordLabelDrag(g);
+      enableApothemLabelDrag(g);
+    }
     enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
     g.addEventListener('dblclick', function (ev) {
@@ -1643,6 +2022,26 @@
           const x = parseFloat(ev.target.getAttribute('x'));
           const y = parseFloat(ev.target.getAttribute('y'));
           openChordLabelEditor(g, chordLine, x, y - 18);
+        }
+        return;
+      }
+      if (ev.target.classList.contains('apothem-line')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        openApothemLabelEditor(g, ev.target);
+        return;
+      }
+      if (ev.target.classList.contains('apothem-label')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        const edgeIndex = ev.target.getAttribute('data-edge-index');
+        const apothemLine = g.querySelector('.apothem-line[data-edge-index="' + edgeIndex + '"]');
+        if (apothemLine) {
+          const x = parseFloat(ev.target.getAttribute('x'));
+          const y = parseFloat(ev.target.getAttribute('y'));
+          openApothemLabelEditor(g, apothemLine, x, y - 18);
         }
         return;
       }
@@ -1699,8 +2098,40 @@
     updateLabelPositions(g);
     updateEdgeLabelPositions(g);
     updateAltitudeLines(g);
-    if (g.dataset.shapeType === 'regular-polygon') updateChords(g);
+    if (g.dataset.shapeType === 'regular-polygon') {
+      const centerEl = g.querySelector('.shape-center');
+      if (centerEl) {
+        const cx = points.reduce((s, p) => s + p[0], 0) / n;
+        const cy = points.reduce((s, p) => s + p[1], 0) / n;
+        centerEl.setAttribute('cx', cx);
+        centerEl.setAttribute('cy', cy);
+      }
+      updateChords(g);
+      updateApothems(g);
+    }
     updateRightAngleMarks(g);
+  }
+
+  function updateApothems(g) {
+    const circles = g.querySelectorAll('.vertex');
+    const points = Array.from(circles).map(c => [
+      parseFloat(c.getAttribute('cx')),
+      parseFloat(c.getAttribute('cy'))
+    ]);
+    const n = points.length;
+    const cx = points.reduce((s, p) => s + p[0], 0) / n;
+    const cy = points.reduce((s, p) => s + p[1], 0) / n;
+    g.querySelectorAll('.apothem-line').forEach(function (line) {
+      const edgeIndex = parseInt(line.getAttribute('data-edge-index'), 10);
+      if (isNaN(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) return;
+      const midX = (points[edgeIndex][0] + points[(edgeIndex + 1) % n][0]) / 2;
+      const midY = (points[edgeIndex][1] + points[(edgeIndex + 1) % n][1]) / 2;
+      line.setAttribute('x1', cx);
+      line.setAttribute('y1', cy);
+      line.setAttribute('x2', midX);
+      line.setAttribute('y2', midY);
+    });
+    updateApothemLabelPositions(g);
   }
 
   function updateChords(g) {
@@ -2227,7 +2658,7 @@
 
     g.querySelectorAll('.vertex').forEach(circle => {
       circle.addEventListener('mousedown', function (ev) {
-        if (altitudeDrawingMode || chordDrawingMode) return;
+        if (altitudeDrawingMode || chordDrawingMode || apothemDrawingMode) return;
         ev.preventDefault();
         ev.stopPropagation();
         pendingVertex = this;
@@ -2739,6 +3170,95 @@
     });
   }
 
+  function openApothemLabelEditor(shapeGroup, apothemLine, editorX, editorY) {
+    const edgeIndex = apothemLine.getAttribute('data-edge-index');
+    let textEl = shapeGroup.querySelector('.apothem-label[data-edge-index="' + edgeIndex + '"]');
+    if (!textEl) {
+      let apothemLabelsGroup = shapeGroup.querySelector('.apothem-labels');
+      if (!apothemLabelsGroup) {
+        apothemLabelsGroup = document.createElementNS(SVG_NS, 'g');
+        apothemLabelsGroup.setAttribute('class', 'apothem-labels');
+        const apothemLinesGroup = shapeGroup.querySelector('.apothem-lines');
+        shapeGroup.insertBefore(apothemLabelsGroup, apothemLinesGroup ? apothemLinesGroup.nextSibling : null);
+      }
+      const x1 = parseFloat(apothemLine.getAttribute('x1'));
+      const y1 = parseFloat(apothemLine.getAttribute('y1'));
+      const x2 = parseFloat(apothemLine.getAttribute('x2'));
+      const y2 = parseFloat(apothemLine.getAttribute('y2'));
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      textEl = document.createElementNS(SVG_NS, 'text');
+      textEl.setAttribute('class', 'apothem-label edge-label');
+      textEl.setAttribute('data-edge-index', edgeIndex);
+      textEl.setAttribute('x', mx);
+      textEl.setAttribute('y', my);
+      textEl.setAttribute('text-anchor', 'middle');
+      textEl.setAttribute('dominant-baseline', 'middle');
+      textEl.setAttribute('data-offset-dx', '0');
+      textEl.setAttribute('data-offset-dy', '0');
+      textEl.setAttribute('pointer-events', 'all');
+      apothemLabelsGroup.appendChild(textEl);
+    }
+    const currentLabel = textEl.textContent || textEl.getAttribute('data-label') || '';
+    const tx = parseFloat(textEl.getAttribute('x'));
+    const ty = parseFloat(textEl.getAttribute('y'));
+    if (editorX == null) editorX = tx;
+    if (editorY == null) editorY = ty - 18;
+
+    const fo = document.createElementNS(SVG_NS, 'foreignObject');
+    fo.setAttribute('x', editorX);
+    fo.setAttribute('y', editorY);
+    fo.setAttribute('width', 200);
+    fo.setAttribute('height', 36);
+    fo.setAttribute('class', 'vertex-label-editor');
+    fo.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentLabel;
+    input.className = 'vertex-label-input';
+    fo.appendChild(input);
+    workspace.appendChild(fo);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const value = input.value.trim();
+      if (value !== currentLabel) {
+        pushUndo();
+        textEl.textContent = value;
+        textEl.setAttribute('data-label', value);
+        updateApothemLabelPositions(shapeGroup);
+      }
+      fo.remove();
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
+    });
+  }
+
+  function updateApothemLabelPositions(g) {
+    g.querySelectorAll('.apothem-line').forEach(function (line) {
+      const edgeIndex = line.getAttribute('data-edge-index');
+      const x1 = parseFloat(line.getAttribute('x1'));
+      const y1 = parseFloat(line.getAttribute('y1'));
+      const x2 = parseFloat(line.getAttribute('x2'));
+      const y2 = parseFloat(line.getAttribute('y2'));
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const labelEl = g.querySelector('.apothem-label[data-edge-index="' + edgeIndex + '"]');
+      if (labelEl) {
+        const dx = labelEl.hasAttribute('data-offset-dx') ? parseFloat(labelEl.getAttribute('data-offset-dx')) : 0;
+        const dy = labelEl.hasAttribute('data-offset-dy') ? parseFloat(labelEl.getAttribute('data-offset-dy')) : 0;
+        labelEl.setAttribute('x', mx + dx);
+        labelEl.setAttribute('y', my + dy);
+      }
+    });
+  }
+
   function enableEdgeLabels(g) {
     const polygon = g.querySelector('.shape-body');
     if (polygon) {
@@ -2889,6 +3409,72 @@
           const y1 = parseFloat(chordLine.getAttribute('y1'));
           const x2 = parseFloat(chordLine.getAttribute('x2'));
           const y2 = parseFloat(chordLine.getAttribute('y2'));
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
+          const tx = parseFloat(draggingLabel.getAttribute('x'));
+          const ty = parseFloat(draggingLabel.getAttribute('y'));
+          draggingLabel.setAttribute('data-offset-dx', String(tx - mx));
+          draggingLabel.setAttribute('data-offset-dy', String(ty - my));
+        }
+      }
+      draggingLabel = null;
+      pendingLabelDrag = null;
+    });
+  }
+
+  function enableApothemLabelDrag(g) {
+    let draggingLabel = null;
+    let pendingLabelDrag = null;
+    let startX, startY, startTextX, startTextY;
+    const DRAG_THRESHOLD = 3;
+
+    g.addEventListener('mousedown', function (ev) {
+      if (!ev.target.classList.contains('apothem-label')) return;
+      ev.stopPropagation();
+      pendingLabelDrag = ev.target;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      startTextX = parseFloat(ev.target.getAttribute('x'));
+      startTextY = parseFloat(ev.target.getAttribute('y'));
+    });
+
+    document.addEventListener('mousemove', function (ev) {
+      if (draggingLabel) {
+        const rect = workspace.getBoundingClientRect();
+        const scaleX = workspace.width.baseVal.value / rect.width;
+        const scaleY = workspace.height.baseVal.value / rect.height;
+        const dx = (ev.clientX - startX) * scaleX;
+        const dy = (ev.clientY - startY) * scaleY;
+        draggingLabel.setAttribute('x', startTextX + dx);
+        draggingLabel.setAttribute('y', startTextY + dy);
+        startX = ev.clientX;
+        startY = ev.clientY;
+        startTextX = parseFloat(draggingLabel.getAttribute('x'));
+        startTextY = parseFloat(draggingLabel.getAttribute('y'));
+      } else if (pendingLabelDrag) {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (Math.hypot(dx, dy) >= DRAG_THRESHOLD) {
+          draggingLabel = pendingLabelDrag;
+          pendingLabelDrag = null;
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startTextX = parseFloat(draggingLabel.getAttribute('x'));
+          startTextY = parseFloat(draggingLabel.getAttribute('y'));
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', function (ev) {
+      if (draggingLabel) {
+        const shapeGroup = draggingLabel.closest('.shape-group');
+        const edgeIndex = draggingLabel.getAttribute('data-edge-index');
+        const apothemLine = shapeGroup ? shapeGroup.querySelector('.apothem-line[data-edge-index="' + edgeIndex + '"]') : null;
+        if (apothemLine) {
+          const x1 = parseFloat(apothemLine.getAttribute('x1'));
+          const y1 = parseFloat(apothemLine.getAttribute('y1'));
+          const x2 = parseFloat(apothemLine.getAttribute('x2'));
+          const y2 = parseFloat(apothemLine.getAttribute('y2'));
           const mx = (x1 + x2) / 2;
           const my = (y1 + y2) / 2;
           const tx = parseFloat(draggingLabel.getAttribute('x'));
@@ -3135,22 +3721,38 @@
         const [px, py] = getWorkspacePoint(ev);
         const cx = ev.clientX;
         const cy = ev.clientY;
-        let chordLine = ev.target.classList.contains('chord-line') ? ev.target : null;
-        if (!chordLine && g.dataset.shapeType === 'regular-polygon') chordLine = getClosestChord(g, px, py);
-        if (chordLine) {
+        if (ev.target.classList.contains('shape-center')) {
           if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
           contextMenuTimeout = setTimeout(function () {
             contextMenuTimeout = null;
-            showChordContextMenu(g, chordLine, cx, cy);
+            showCenterPointContextMenu(g, ev.target, cx, cy);
           }, CLICK_MENU_DELAY);
-        } else if (ev.target.classList.contains('shape-body')) {
-          const edgeIndex = g.dataset.shapeType === 'circle' ? null : getClosestEdgeIndex(g, px, py);
-          if (edgeIndex !== null) {
+        } else {
+          if (ev.target.classList.contains('apothem-line')) {
             if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
             contextMenuTimeout = setTimeout(function () {
               contextMenuTimeout = null;
-              showEdgeContextMenu(g, edgeIndex, cx, cy);
+              showApothemContextMenu(g, ev.target, cx, cy);
             }, CLICK_MENU_DELAY);
+          } else {
+          let chordLine = ev.target.classList.contains('chord-line') ? ev.target : null;
+          if (!chordLine && g.dataset.shapeType === 'regular-polygon') chordLine = getClosestChord(g, px, py);
+          if (chordLine) {
+            if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
+            contextMenuTimeout = setTimeout(function () {
+              contextMenuTimeout = null;
+              showChordContextMenu(g, chordLine, cx, cy);
+            }, CLICK_MENU_DELAY);
+          } else if (ev.target.classList.contains('shape-body')) {
+            const edgeIndex = g.dataset.shapeType === 'circle' ? null : getClosestEdgeIndex(g, px, py);
+            if (edgeIndex !== null) {
+              if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
+              contextMenuTimeout = setTimeout(function () {
+                contextMenuTimeout = null;
+                showEdgeContextMenu(g, edgeIndex, cx, cy);
+              }, CLICK_MENU_DELAY);
+            }
+          }
           }
         }
       }
@@ -3163,8 +3765,8 @@
 
     g.addEventListener('mousedown', function (ev) {
       if (ev.target.classList.contains('vertex')) return;
-      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label') || ev.target.classList.contains('circle-line-label') || ev.target.classList.contains('chord-label')) return;
-      if (altitudeDrawingMode || chordDrawingMode) return;
+      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label') || ev.target.classList.contains('circle-line-label') || ev.target.classList.contains('chord-label') || ev.target.classList.contains('apothem-label')) return;
+      if (altitudeDrawingMode || chordDrawingMode || apothemDrawingMode) return;
       if (g.dataset.shapeType === 'circle' && (ev.target.classList.contains('circle-radius-line') || ev.target.classList.contains('circle-diameter-line'))) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -3234,7 +3836,7 @@
 
   workspace.addEventListener('click', function (ev) {
     const label = ev.target;
-    if (!label.classList || (!label.classList.contains('vertex-label') && !label.classList.contains('edge-label') && !label.classList.contains('altitude-label') && !label.classList.contains('circle-line-label') && !label.classList.contains('chord-label'))) return;
+    if (!label.classList || (!label.classList.contains('vertex-label') && !label.classList.contains('edge-label') && !label.classList.contains('altitude-label') && !label.classList.contains('circle-line-label') && !label.classList.contains('chord-label') && !label.classList.contains('apothem-label'))) return;
     if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
     const cx = ev.clientX;
     const cy = ev.clientY;
