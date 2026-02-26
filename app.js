@@ -32,6 +32,9 @@
   const PRESET_COLORS = ['#000000', '#0066cc', '#cc0000', '#009933', '#9933cc', '#ff6600'];
   const GRAYSCALE_COLORS = ['#333333', '#808080', '#c0c0c0'];
   const CLICK_MENU_DELAY = 250;
+  const DEFAULT_LABEL_FONT_SIZE = 22;
+  const MIN_LABEL_FONT_SIZE = 10;
+  const MAX_LABEL_FONT_SIZE = 48;
 
   let contextMenuTimeout = null;
   let altitudeDrawingMode = null;
@@ -58,7 +61,8 @@
         vertexLabels.push({
           text: (el && (el.textContent || el.getAttribute('data-label') || '')) || '',
           offsetDx: el && el.hasAttribute('data-offset-dx') ? parseFloat(el.getAttribute('data-offset-dx')) : LABEL_OFFSET_X,
-          offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : LABEL_OFFSET_Y
+          offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : LABEL_OFFSET_Y,
+          fontSize: el && el.hasAttribute('data-font-size') ? parseInt(el.getAttribute('data-font-size'), 10) : undefined
         });
       });
       const vertexStyles = [];
@@ -73,7 +77,8 @@
         edgeLabels.push({
           text: (el && (el.textContent || el.getAttribute('data-label') || '')) || '',
           offsetDx: el && el.hasAttribute('data-offset-dx') ? parseFloat(el.getAttribute('data-offset-dx')) : 0,
-          offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : 0
+          offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : 0,
+          fontSize: el && el.hasAttribute('data-font-size') ? parseInt(el.getAttribute('data-font-size'), 10) : undefined
         });
       }
       const edgeStyles = [];
@@ -97,7 +102,8 @@
           t: parseFloat(altLine.getAttribute('data-edge-t')),
           labelText: labelEl ? (labelEl.textContent || labelEl.getAttribute('data-label') || '') : '',
           offsetDx: labelEl && labelEl.hasAttribute('data-offset-dx') ? parseFloat(labelEl.getAttribute('data-offset-dx')) : 0,
-          offsetDy: labelEl && labelEl.hasAttribute('data-offset-dy') ? parseFloat(labelEl.getAttribute('data-offset-dy')) : 0
+          offsetDy: labelEl && labelEl.hasAttribute('data-offset-dy') ? parseFloat(labelEl.getAttribute('data-offset-dy')) : 0,
+          fontSize: labelEl && labelEl.hasAttribute('data-font-size') ? parseInt(labelEl.getAttribute('data-font-size'), 10) : undefined
         });
       });
       const rightAngleMarks = [];
@@ -128,7 +134,8 @@
             strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined,
             labelText: label ? (label.textContent || label.getAttribute('data-label') || '') : '',
             offsetDx: label && label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0,
-            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0
+            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0,
+            fontSize: label && label.hasAttribute('data-font-size') ? parseInt(label.getAttribute('data-font-size'), 10) : undefined
           });
         });
         const circleDiameters = [];
@@ -143,7 +150,8 @@
             strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined,
             labelText: label ? (label.textContent || label.getAttribute('data-label') || '') : '',
             offsetDx: label && label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0,
-            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0
+            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0,
+            fontSize: label && label.hasAttribute('data-font-size') ? parseInt(label.getAttribute('data-font-size'), 10) : undefined
           });
         });
         state.circleRadii = circleRadii;
@@ -245,6 +253,7 @@
       if (vl.text) { text.textContent = vl.text; text.setAttribute('data-label', vl.text); }
       text.setAttribute('data-offset-dx', String(vl.offsetDx != null ? vl.offsetDx : LABEL_OFFSET_X));
       text.setAttribute('data-offset-dy', String(vl.offsetDy != null ? vl.offsetDy : LABEL_OFFSET_Y));
+      if (vl.fontSize != null) setLabelFontSize(text, vl.fontSize);
       labelsGroup.appendChild(text);
     });
     g.appendChild(labelsGroup);
@@ -267,6 +276,7 @@
         if (el.text) { text.textContent = el.text; text.setAttribute('data-label', el.text); }
         text.setAttribute('data-offset-dx', String(el.offsetDx != null ? el.offsetDx : 0));
         text.setAttribute('data-offset-dy', String(el.offsetDy != null ? el.offsetDy : 0));
+        if (el.fontSize != null) setLabelFontSize(text, el.fontSize);
         edgeLabelsGroup.appendChild(text);
       }
     }
@@ -342,6 +352,7 @@
         label.setAttribute('data-offset-dx', String(rad.offsetDx != null ? rad.offsetDx : 0));
         label.setAttribute('data-offset-dy', String(rad.offsetDy != null ? rad.offsetDy : 0));
         if (rad.labelText) { label.textContent = rad.labelText; label.setAttribute('data-label', rad.labelText); }
+        if (rad.fontSize != null) setLabelFontSize(label, rad.fontSize);
         circleLineLabelsGroup.appendChild(label);
       });
       (s.circleDiameters || []).forEach(function (diam, idx) {
@@ -360,6 +371,7 @@
         label.setAttribute('data-offset-dx', String(diam.offsetDx != null ? diam.offsetDx : 0));
         label.setAttribute('data-offset-dy', String(diam.offsetDy != null ? diam.offsetDy : 0));
         if (diam.labelText) { label.textContent = diam.labelText; label.setAttribute('data-label', diam.labelText); }
+        if (diam.fontSize != null) setLabelFontSize(label, diam.fontSize);
         circleLineLabelsGroup.appendChild(label);
       });
     }
@@ -402,6 +414,7 @@
         label.setAttribute('text-anchor', 'middle');
         label.setAttribute('dominant-baseline', 'middle');
         if (alt.labelText) { label.textContent = alt.labelText; label.setAttribute('data-label', alt.labelText); }
+        if (alt.fontSize != null) setLabelFontSize(label, alt.fontSize);
         altitudeLabelsGroup.appendChild(label);
       }
     });
@@ -519,6 +532,60 @@
       document.addEventListener('click', closeContextMenuOnClickOutside);
       document.addEventListener('keydown', closeContextMenuOnEscape);
     }, 0);
+  }
+
+  function getLabelFontSize(labelEl) {
+    const v = parseInt(labelEl.getAttribute('data-font-size'), 10);
+    return isNaN(v) ? DEFAULT_LABEL_FONT_SIZE : Math.max(MIN_LABEL_FONT_SIZE, Math.min(MAX_LABEL_FONT_SIZE, v));
+  }
+
+  function setLabelFontSize(labelEl, size) {
+    const val = Math.max(MIN_LABEL_FONT_SIZE, Math.min(MAX_LABEL_FONT_SIZE, size));
+    labelEl.setAttribute('data-font-size', String(val));
+    labelEl.style.fontSize = val + 'pt';
+  }
+
+  function showLabelFontSizeContextMenu(labelEl, clientX, clientY) {
+    let didPushUndo = false;
+    let currentSize = getLabelFontSize(labelEl);
+    showContextMenuAt(clientX, clientY, function (menu) {
+      const title = document.createElement('div');
+      title.className = 'context-menu-title';
+      title.textContent = 'Label font size';
+      menu.appendChild(title);
+      const row = document.createElement('div');
+      row.className = 'context-menu-row';
+      const btnMinus = document.createElement('button');
+      btnMinus.type = 'button';
+      btnMinus.className = 'context-menu-size-btn';
+      btnMinus.textContent = '−';
+      const sizeDisplay = document.createElement('span');
+      sizeDisplay.className = 'context-menu-size-value';
+      sizeDisplay.textContent = currentSize;
+      const btnPlus = document.createElement('button');
+      btnPlus.type = 'button';
+      btnPlus.className = 'context-menu-size-btn';
+      btnPlus.textContent = '+';
+      function updateSize(val) {
+        if (val !== currentSize && !didPushUndo) { pushUndo(); didPushUndo = true; }
+        currentSize = val;
+        sizeDisplay.textContent = currentSize;
+        setLabelFontSize(labelEl, currentSize);
+        btnMinus.disabled = currentSize <= MIN_LABEL_FONT_SIZE;
+        btnPlus.disabled = currentSize >= MAX_LABEL_FONT_SIZE;
+      }
+      btnMinus.addEventListener('click', function () {
+        if (currentSize > MIN_LABEL_FONT_SIZE) updateSize(currentSize - 1);
+      });
+      btnPlus.addEventListener('click', function () {
+        if (currentSize < MAX_LABEL_FONT_SIZE) updateSize(currentSize + 1);
+      });
+      updateSize(currentSize);
+      row.appendChild(btnMinus);
+      row.appendChild(sizeDisplay);
+      row.appendChild(btnPlus);
+      menu.appendChild(row);
+    });
   }
 
   function showVertexContextMenu(circle, clientX, clientY) {
@@ -2726,6 +2793,18 @@
         showEdgeContextMenu(hit.g, hit.edgeIndex, cx, cy);
       }, CLICK_MENU_DELAY);
     }
+  });
+
+  workspace.addEventListener('click', function (ev) {
+    const label = ev.target;
+    if (!label.classList || (!label.classList.contains('vertex-label') && !label.classList.contains('edge-label') && !label.classList.contains('altitude-label') && !label.classList.contains('circle-line-label'))) return;
+    if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
+    const cx = ev.clientX;
+    const cy = ev.clientY;
+    contextMenuTimeout = setTimeout(function () {
+      contextMenuTimeout = null;
+      showLabelFontSizeContextMenu(label, cx, cy);
+    }, CLICK_MENU_DELAY);
   });
 
   workspace.addEventListener('dblclick', function (ev) {
