@@ -38,6 +38,7 @@
 
   let contextMenuTimeout = null;
   let altitudeDrawingMode = null;
+  let chordDrawingMode = null;
 
   const MAX_UNDO = 50;
   let undoStack = [];
@@ -157,7 +158,28 @@
         state.circleRadii = circleRadii;
         state.circleDiameters = circleDiameters;
       }
-      if (shapeType === 'regular-polygon') state.sides = parseInt(g.dataset.sides, 10) || DEFAULT_REGULAR_POLYGON_SIDES;
+      if (shapeType === 'regular-polygon') {
+        state.sides = parseInt(g.dataset.sides, 10) || DEFAULT_REGULAR_POLYGON_SIDES;
+        const chords = [];
+        g.querySelectorAll('.chord-line').forEach(function (line) {
+          const a = parseInt(line.getAttribute('data-vertex-a'), 10);
+          const b = parseInt(line.getAttribute('data-vertex-b'), 10);
+          if (isNaN(a) || isNaN(b)) return;
+          const label = g.querySelector('.chord-label[data-vertex-a="' + a + '"][data-vertex-b="' + b + '"]');
+          chords.push({
+            vertexA: a,
+            vertexB: b,
+            labelText: label ? (label.textContent || label.getAttribute('data-label') || '') : '',
+            offsetDx: label && label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0,
+            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0,
+            stroke: line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#333',
+            strokeWidth: line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2',
+            strokeDasharray: line.getAttribute('data-stroke-dasharray') || undefined,
+            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined
+          });
+        });
+        state.chords = chords;
+      }
       shapesState.push(state);
     });
     return { shapes: shapesState, nextAltitudeId: maxAltitudeId + 1 };
@@ -419,6 +441,54 @@
       }
     });
     }
+    if (shapeType === 'regular-polygon' && s.chords && s.chords.length) {
+      const chordLinesGroup = document.createElementNS(SVG_NS, 'g');
+      chordLinesGroup.setAttribute('class', 'chord-lines');
+      const chordLabelsGroup = document.createElementNS(SVG_NS, 'g');
+      chordLabelsGroup.setAttribute('class', 'chord-labels');
+      g.insertBefore(chordLinesGroup, altitudeLabelsGroup);
+      g.insertBefore(chordLabelsGroup, chordLinesGroup.nextSibling);
+      s.chords.forEach(function (c) {
+        const a = c.vertexA;
+        const b = c.vertexB;
+        if (a < 0 || a >= n || b < 0 || b >= n || a === b) return;
+        const x1 = vertices[a][0];
+        const y1 = vertices[a][1];
+        const x2 = vertices[b][0];
+        const y2 = vertices[b][1];
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2;
+        const chordLine = document.createElementNS(SVG_NS, 'line');
+        chordLine.setAttribute('class', 'chord-line');
+        chordLine.setAttribute('data-vertex-a', String(a));
+        chordLine.setAttribute('data-vertex-b', String(b));
+        chordLine.setAttribute('x1', x1);
+        chordLine.setAttribute('y1', y1);
+        chordLine.setAttribute('x2', x2);
+        chordLine.setAttribute('y2', y2);
+        chordLine.setAttribute('stroke', c.stroke || '#333');
+        chordLine.setAttribute('data-stroke', c.stroke || '#333');
+        chordLine.setAttribute('stroke-width', c.strokeWidth || '2');
+        chordLine.setAttribute('data-stroke-width', c.strokeWidth || '2');
+        if (c.strokeDasharray) { chordLine.setAttribute('stroke-dasharray', c.strokeDasharray); chordLine.setAttribute('data-stroke-dasharray', c.strokeDasharray); }
+        if (c.strokeLinecap) { chordLine.setAttribute('stroke-linecap', c.strokeLinecap); chordLine.setAttribute('data-stroke-linecap', c.strokeLinecap); }
+        chordLine.setAttribute('pointer-events', 'stroke');
+        chordLinesGroup.appendChild(chordLine);
+        const chordLabel = document.createElementNS(SVG_NS, 'text');
+        chordLabel.setAttribute('class', 'chord-label edge-label');
+        chordLabel.setAttribute('data-vertex-a', String(a));
+        chordLabel.setAttribute('data-vertex-b', String(b));
+        chordLabel.setAttribute('data-offset-dx', String(c.offsetDx != null ? c.offsetDx : 0));
+        chordLabel.setAttribute('data-offset-dy', String(c.offsetDy != null ? c.offsetDy : 0));
+        chordLabel.setAttribute('x', mx + (c.offsetDx || 0));
+        chordLabel.setAttribute('y', my + (c.offsetDy || 0));
+        chordLabel.setAttribute('text-anchor', 'middle');
+        chordLabel.setAttribute('dominant-baseline', 'middle');
+        chordLabel.setAttribute('pointer-events', 'all');
+        if (c.labelText) { chordLabel.textContent = c.labelText; chordLabel.setAttribute('data-label', c.labelText); }
+        chordLabelsGroup.appendChild(chordLabel);
+      });
+    }
     (s.rightAngleMarks || []).forEach(vi => addRightAngleMark(g, vi));
     enableVertexDrag(g);
     enableVertexLabels(g);
@@ -426,6 +496,7 @@
     enableEdgeLabels(g);
     enableEdgeLabelDrag(g);
     if (isCircle) enableCircleLineLabelDrag(g);
+    if (shapeType === 'regular-polygon') enableChordLabelDrag(g);
     enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
     g.addEventListener('dblclick', function (ev) {
@@ -452,6 +523,27 @@
           ? g.querySelector('.circle-radius-line[data-radius-index="' + idx + '"]')
           : g.querySelector('.circle-diameter-line[data-diameter-index="' + idx + '"]');
         if (line) openCircleLineLabelEditor(g, line);
+        return;
+      }
+      if (ev.target.classList.contains('chord-line')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        openChordLabelEditor(g, ev.target);
+        return;
+      }
+      if (ev.target.classList.contains('chord-label')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        const va = ev.target.getAttribute('data-vertex-a');
+        const vb = ev.target.getAttribute('data-vertex-b');
+        const chordLine = g.querySelector('.chord-line[data-vertex-a="' + va + '"][data-vertex-b="' + vb + '"]');
+        if (chordLine) {
+          const x = parseFloat(ev.target.getAttribute('x'));
+          const y = parseFloat(ev.target.getAttribute('y'));
+          openChordLabelEditor(g, chordLine, x, y - 18);
+        }
         return;
       }
       if (!ev.target.classList.contains('altitude-line')) return;
@@ -688,7 +780,8 @@
       const shapeGroup = circle.closest('.shape-group');
       const vertexIndex = parseInt(circle.getAttribute('data-index'), 10);
       const isCircleShape = shapeGroup && shapeGroup.dataset.shapeType === 'circle';
-      if (!isCircleShape) {
+      const isRegularPolygon = shapeGroup && shapeGroup.dataset.shapeType === 'regular-polygon';
+      if (!isCircleShape && !isRegularPolygon) {
         const btnAltitude = document.createElement('button');
         btnAltitude.type = 'button';
         btnAltitude.className = 'context-menu-style-btn';
@@ -698,7 +791,19 @@
           startAltitudeDrawing(circle);
         });
         rowAltitude.appendChild(btnAltitude);
-      } else {
+      }
+      if (isRegularPolygon) {
+        const btnChord = document.createElement('button');
+        btnChord.type = 'button';
+        btnChord.className = 'context-menu-style-btn';
+        btnChord.textContent = 'Draw chord';
+        btnChord.addEventListener('click', function () {
+          hideContextMenu();
+          startChordDrawing(circle);
+        });
+        rowAltitude.appendChild(btnChord);
+      }
+      if (isCircleShape) {
         const radiusLines = shapeGroup.querySelectorAll('.circle-radius-line');
         const diameterLines = shapeGroup.querySelectorAll('.circle-diameter-line');
         const btnRadius = document.createElement('button');
@@ -914,15 +1019,123 @@
     document.addEventListener('keydown', cancelAltitude);
   }
 
-  function showEdgeContextMenu(shapeGroup, edgeIndex, clientX, clientY) {
-    const line = shapeGroup.querySelector('.shape-edge[data-edge-index="' + edgeIndex + '"]');
-    if (!line) return;
+  function startChordDrawing(vertexCircle) {
+    const shapeGroup = vertexCircle.closest('.shape-group');
+    if (!shapeGroup || shapeGroup.dataset.shapeType !== 'regular-polygon') return;
+    const fromVertexIndex = parseInt(vertexCircle.getAttribute('data-index'), 10);
+    if (isNaN(fromVertexIndex)) return;
+    chordDrawingMode = { shapeGroup: shapeGroup, fromVertexIndex: fromVertexIndex };
+    function finishChord(ev) {
+      if (!chordDrawingMode) return;
+      if (ev.target.closest('#context-menu') || ev.target.closest('.vertex-label-editor')) return;
+      const t = ev.target;
+      if (!t.classList.contains('vertex')) {
+        chordDrawingMode = null;
+        document.removeEventListener('click', finishChord, true);
+        document.removeEventListener('keydown', cancelChord);
+        return;
+      }
+      const g = t.closest('.shape-group');
+      if (g !== chordDrawingMode.shapeGroup) {
+        chordDrawingMode = null;
+        document.removeEventListener('click', finishChord, true);
+        document.removeEventListener('keydown', cancelChord);
+        return;
+      }
+      const toVertexIndex = parseInt(t.getAttribute('data-index'), 10);
+      if (toVertexIndex === chordDrawingMode.fromVertexIndex) {
+        chordDrawingMode = null;
+        document.removeEventListener('click', finishChord, true);
+        document.removeEventListener('keydown', cancelChord);
+        return;
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      const va = Math.min(chordDrawingMode.fromVertexIndex, toVertexIndex);
+      const vb = Math.max(chordDrawingMode.fromVertexIndex, toVertexIndex);
+      let chordLinesGroup = shapeGroup.querySelector('.chord-lines');
+      if (!chordLinesGroup) {
+        chordLinesGroup = document.createElementNS(SVG_NS, 'g');
+        chordLinesGroup.setAttribute('class', 'chord-lines');
+        const altLabels = shapeGroup.querySelector('.altitude-labels');
+        shapeGroup.insertBefore(chordLinesGroup, altLabels);
+      }
+      const existing = shapeGroup.querySelectorAll('.chord-line');
+      for (let i = 0; i < existing.length; i++) {
+        const line = existing[i];
+        const a = parseInt(line.getAttribute('data-vertex-a'), 10);
+        const b = parseInt(line.getAttribute('data-vertex-b'), 10);
+        if ((a === va && b === vb)) {
+          chordDrawingMode = null;
+          document.removeEventListener('click', finishChord, true);
+          document.removeEventListener('keydown', cancelChord);
+          return;
+        }
+      }
+      pushUndo();
+      const points = getVertexCoords(shapeGroup);
+      const x1 = points[va][0];
+      const y1 = points[va][1];
+      const x2 = points[vb][0];
+      const y2 = points[vb][1];
+      const chordLine = document.createElementNS(SVG_NS, 'line');
+      chordLine.setAttribute('class', 'chord-line');
+      chordLine.setAttribute('data-vertex-a', String(va));
+      chordLine.setAttribute('data-vertex-b', String(vb));
+      chordLine.setAttribute('x1', x1);
+      chordLine.setAttribute('y1', y1);
+      chordLine.setAttribute('x2', x2);
+      chordLine.setAttribute('y2', y2);
+      chordLine.setAttribute('stroke', '#333');
+      chordLine.setAttribute('data-stroke', '#333');
+      chordLine.setAttribute('stroke-width', '2');
+      chordLine.setAttribute('data-stroke-width', '2');
+      chordLine.setAttribute('pointer-events', 'stroke');
+      chordLinesGroup.appendChild(chordLine);
+      let chordLabelsGroup = shapeGroup.querySelector('.chord-labels');
+      if (!chordLabelsGroup) {
+        chordLabelsGroup = document.createElementNS(SVG_NS, 'g');
+        chordLabelsGroup.setAttribute('class', 'chord-labels');
+        shapeGroup.insertBefore(chordLabelsGroup, chordLinesGroup.nextSibling);
+      }
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const chordLabel = document.createElementNS(SVG_NS, 'text');
+      chordLabel.setAttribute('class', 'chord-label edge-label');
+      chordLabel.setAttribute('data-vertex-a', String(va));
+      chordLabel.setAttribute('data-vertex-b', String(vb));
+      chordLabel.setAttribute('x', mx);
+      chordLabel.setAttribute('y', my);
+      chordLabel.setAttribute('text-anchor', 'middle');
+      chordLabel.setAttribute('dominant-baseline', 'middle');
+      chordLabel.setAttribute('data-offset-dx', '0');
+      chordLabel.setAttribute('data-offset-dy', '0');
+      chordLabel.setAttribute('pointer-events', 'all');
+      chordLabelsGroup.appendChild(chordLabel);
+      chordDrawingMode = null;
+      document.removeEventListener('click', finishChord, true);
+      document.removeEventListener('keydown', cancelChord);
+    }
+    function cancelChord(ev) {
+      if (!chordDrawingMode) return;
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        chordDrawingMode = null;
+        document.removeEventListener('click', finishChord, true);
+        document.removeEventListener('keydown', cancelChord);
+      }
+    }
+    document.addEventListener('click', finishChord, true);
+    document.addEventListener('keydown', cancelChord);
+  }
+
+  function showLineStyleContextMenu(line, titleText, clientX, clientY) {
     const strokeWidth = line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2';
-    const stroke = line.getAttribute('data-stroke') || line.getAttribute('stroke') || window.getComputedStyle(line).stroke || '#000000';
+    const stroke = line.getAttribute('data-stroke') || line.getAttribute('stroke') || (line.getAttribute && window.getComputedStyle(line).stroke) || '#000000';
     showContextMenuAt(clientX, clientY, function (menu) {
       const title = document.createElement('div');
       title.className = 'context-menu-title';
-      title.textContent = 'Edge';
+      title.textContent = titleText;
       menu.appendChild(title);
       const rowWidth = document.createElement('div');
       rowWidth.className = 'context-menu-row';
@@ -1070,6 +1283,16 @@
       rowGray.appendChild(grayWrap);
       menu.appendChild(rowGray);
     });
+  }
+
+  function showEdgeContextMenu(shapeGroup, edgeIndex, clientX, clientY) {
+    const line = shapeGroup.querySelector('.shape-edge[data-edge-index="' + edgeIndex + '"]');
+    if (!line) return;
+    showLineStyleContextMenu(line, 'Edge', clientX, clientY);
+  }
+
+  function showChordContextMenu(shapeGroup, chordLine, clientX, clientY) {
+    showLineStyleContextMenu(chordLine, 'Chord', clientX, clientY);
   }
 
   function showCircleLineContextMenu(shapeGroup, line, clientX, clientY) {
@@ -1373,6 +1596,7 @@
     enableEdgeLabels(g);
     enableEdgeLabelDrag(g);
     if (isCircle) enableCircleLineLabelDrag(g);
+    if (shapeType === 'regular-polygon') enableChordLabelDrag(g);
     enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
     g.addEventListener('dblclick', function (ev) {
@@ -1399,6 +1623,27 @@
           ? g.querySelector('.circle-radius-line[data-radius-index="' + idx + '"]')
           : g.querySelector('.circle-diameter-line[data-diameter-index="' + idx + '"]');
         if (line) openCircleLineLabelEditor(g, line);
+        return;
+      }
+      if (ev.target.classList.contains('chord-line')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        openChordLabelEditor(g, ev.target);
+        return;
+      }
+      if (ev.target.classList.contains('chord-label')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) { clearTimeout(contextMenuTimeout); contextMenuTimeout = null; }
+        const va = ev.target.getAttribute('data-vertex-a');
+        const vb = ev.target.getAttribute('data-vertex-b');
+        const chordLine = g.querySelector('.chord-line[data-vertex-a="' + va + '"][data-vertex-b="' + vb + '"]');
+        if (chordLine) {
+          const x = parseFloat(ev.target.getAttribute('x'));
+          const y = parseFloat(ev.target.getAttribute('y'));
+          openChordLabelEditor(g, chordLine, x, y - 18);
+        }
         return;
       }
       if (!ev.target.classList.contains('altitude-line')) return;
@@ -1454,7 +1699,37 @@
     updateLabelPositions(g);
     updateEdgeLabelPositions(g);
     updateAltitudeLines(g);
+    if (g.dataset.shapeType === 'regular-polygon') updateChords(g);
     updateRightAngleMarks(g);
+  }
+
+  function updateChords(g) {
+    const circles = g.querySelectorAll('.vertex');
+    const points = Array.from(circles).map(c => [
+      parseFloat(c.getAttribute('cx')),
+      parseFloat(c.getAttribute('cy'))
+    ]);
+    const n = points.length;
+    g.querySelectorAll('.chord-line').forEach(function (line) {
+      const a = parseInt(line.getAttribute('data-vertex-a'), 10);
+      const b = parseInt(line.getAttribute('data-vertex-b'), 10);
+      if (isNaN(a) || isNaN(b) || a < 0 || a >= n || b < 0 || b >= n) return;
+      line.setAttribute('x1', points[a][0]);
+      line.setAttribute('y1', points[a][1]);
+      line.setAttribute('x2', points[b][0]);
+      line.setAttribute('y2', points[b][1]);
+    });
+    g.querySelectorAll('.chord-label').forEach(function (label) {
+      const a = parseInt(label.getAttribute('data-vertex-a'), 10);
+      const b = parseInt(label.getAttribute('data-vertex-b'), 10);
+      if (isNaN(a) || isNaN(b) || a < 0 || a >= n || b < 0 || b >= n) return;
+      const mx = (points[a][0] + points[b][0]) / 2;
+      const my = (points[a][1] + points[b][1]) / 2;
+      const dx = label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0;
+      const dy = label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0;
+      label.setAttribute('x', mx + dx);
+      label.setAttribute('y', my + dy);
+    });
   }
 
   function updateAltitudeLines(g) {
@@ -1952,7 +2227,7 @@
 
     g.querySelectorAll('.vertex').forEach(circle => {
       circle.addEventListener('mousedown', function (ev) {
-        if (altitudeDrawingMode) return;
+        if (altitudeDrawingMode || chordDrawingMode) return;
         ev.preventDefault();
         ev.stopPropagation();
         pendingVertex = this;
@@ -2271,6 +2546,24 @@
     return bestDist < EDGE_HIT_THRESHOLD ? bestEdge : null;
   }
 
+  function getClosestChord(g, px, py) {
+    const chordLines = g.querySelectorAll('.chord-line');
+    let bestDist = Infinity;
+    let bestLine = null;
+    chordLines.forEach(function (line) {
+      const x1 = parseFloat(line.getAttribute('x1'));
+      const y1 = parseFloat(line.getAttribute('y1'));
+      const x2 = parseFloat(line.getAttribute('x2'));
+      const y2 = parseFloat(line.getAttribute('y2'));
+      const { dist, t } = distanceToSegment(px, py, x1, y1, x2, y2);
+      if (dist < bestDist && t >= 0.05 && t <= 0.95) {
+        bestDist = dist;
+        bestLine = line;
+      }
+    });
+    return bestDist < EDGE_HIT_THRESHOLD ? bestLine : null;
+  }
+
   function getClosestEdgeAcrossShapes(px, py) {
     const groups = workspace.querySelectorAll('.shape-group');
     let bestDist = Infinity;
@@ -2379,6 +2672,73 @@
     });
   }
 
+  function openChordLabelEditor(shapeGroup, chordLine, editorX, editorY) {
+    const va = chordLine.getAttribute('data-vertex-a');
+    const vb = chordLine.getAttribute('data-vertex-b');
+    let textEl = shapeGroup.querySelector('.chord-label[data-vertex-a="' + va + '"][data-vertex-b="' + vb + '"]');
+    if (!textEl) {
+      const chordLabelsGroup = shapeGroup.querySelector('.chord-labels');
+      if (!chordLabelsGroup) return;
+      const x1 = parseFloat(chordLine.getAttribute('x1'));
+      const y1 = parseFloat(chordLine.getAttribute('y1'));
+      const x2 = parseFloat(chordLine.getAttribute('x2'));
+      const y2 = parseFloat(chordLine.getAttribute('y2'));
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      textEl = document.createElementNS(SVG_NS, 'text');
+      textEl.setAttribute('class', 'chord-label edge-label');
+      textEl.setAttribute('data-vertex-a', va);
+      textEl.setAttribute('data-vertex-b', vb);
+      textEl.setAttribute('x', mx);
+      textEl.setAttribute('y', my);
+      textEl.setAttribute('text-anchor', 'middle');
+      textEl.setAttribute('dominant-baseline', 'middle');
+      textEl.setAttribute('data-offset-dx', '0');
+      textEl.setAttribute('data-offset-dy', '0');
+      textEl.setAttribute('pointer-events', 'all');
+      chordLabelsGroup.appendChild(textEl);
+    }
+    const currentLabel = textEl.textContent || textEl.getAttribute('data-label') || '';
+    const tx = parseFloat(textEl.getAttribute('x'));
+    const ty = parseFloat(textEl.getAttribute('y'));
+    if (editorX == null) editorX = tx;
+    if (editorY == null) editorY = ty - 18;
+
+    const fo = document.createElementNS(SVG_NS, 'foreignObject');
+    fo.setAttribute('x', editorX);
+    fo.setAttribute('y', editorY);
+    fo.setAttribute('width', 200);
+    fo.setAttribute('height', 36);
+    fo.setAttribute('class', 'vertex-label-editor');
+    fo.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentLabel;
+    input.className = 'vertex-label-input';
+    fo.appendChild(input);
+    workspace.appendChild(fo);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const value = input.value.trim();
+      if (value !== currentLabel) {
+        pushUndo();
+        textEl.textContent = value;
+        textEl.setAttribute('data-label', value);
+        if (shapeGroup.dataset.shapeType === 'regular-polygon') updateChords(shapeGroup);
+      }
+      fo.remove();
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
+    });
+  }
+
   function enableEdgeLabels(g) {
     const polygon = g.querySelector('.shape-body');
     if (polygon) {
@@ -2469,6 +2829,73 @@
         const ty = parseFloat(draggingLabel.getAttribute('y'));
         draggingLabel.setAttribute('data-offset-dx', tx - mx);
         draggingLabel.setAttribute('data-offset-dy', ty - my);
+      }
+      draggingLabel = null;
+      pendingLabelDrag = null;
+    });
+  }
+
+  function enableChordLabelDrag(g) {
+    let draggingLabel = null;
+    let pendingLabelDrag = null;
+    let startX, startY, startTextX, startTextY;
+    const DRAG_THRESHOLD = 3;
+
+    g.addEventListener('mousedown', function (ev) {
+      if (!ev.target.classList.contains('chord-label')) return;
+      ev.stopPropagation();
+      pendingLabelDrag = ev.target;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      startTextX = parseFloat(ev.target.getAttribute('x'));
+      startTextY = parseFloat(ev.target.getAttribute('y'));
+    });
+
+    document.addEventListener('mousemove', function (ev) {
+      if (draggingLabel) {
+        const rect = workspace.getBoundingClientRect();
+        const scaleX = workspace.width.baseVal.value / rect.width;
+        const scaleY = workspace.height.baseVal.value / rect.height;
+        const dx = (ev.clientX - startX) * scaleX;
+        const dy = (ev.clientY - startY) * scaleY;
+        draggingLabel.setAttribute('x', startTextX + dx);
+        draggingLabel.setAttribute('y', startTextY + dy);
+        startX = ev.clientX;
+        startY = ev.clientY;
+        startTextX = parseFloat(draggingLabel.getAttribute('x'));
+        startTextY = parseFloat(draggingLabel.getAttribute('y'));
+      } else if (pendingLabelDrag) {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (Math.hypot(dx, dy) >= DRAG_THRESHOLD) {
+          draggingLabel = pendingLabelDrag;
+          pendingLabelDrag = null;
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startTextX = parseFloat(draggingLabel.getAttribute('x'));
+          startTextY = parseFloat(draggingLabel.getAttribute('y'));
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', function (ev) {
+      if (draggingLabel) {
+        const shapeGroup = draggingLabel.closest('.shape-group');
+        const va = draggingLabel.getAttribute('data-vertex-a');
+        const vb = draggingLabel.getAttribute('data-vertex-b');
+        const chordLine = shapeGroup ? shapeGroup.querySelector('.chord-line[data-vertex-a="' + va + '"][data-vertex-b="' + vb + '"]') : null;
+        if (chordLine) {
+          const x1 = parseFloat(chordLine.getAttribute('x1'));
+          const y1 = parseFloat(chordLine.getAttribute('y1'));
+          const x2 = parseFloat(chordLine.getAttribute('x2'));
+          const y2 = parseFloat(chordLine.getAttribute('y2'));
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
+          const tx = parseFloat(draggingLabel.getAttribute('x'));
+          const ty = parseFloat(draggingLabel.getAttribute('y'));
+          draggingLabel.setAttribute('data-offset-dx', String(tx - mx));
+          draggingLabel.setAttribute('data-offset-dy', String(ty - my));
+        }
       }
       draggingLabel = null;
       pendingLabelDrag = null;
@@ -2704,17 +3131,27 @@
           shapeDrag.remove();
         }
         trash.classList.remove('drag-over');
-      } else if (pendingShapeDrag && !didMove && ev.target.classList.contains('shape-body')) {
+      } else if (pendingShapeDrag && !didMove) {
         const [px, py] = getWorkspacePoint(ev);
-        const edgeIndex = g.dataset.shapeType === 'circle' ? null : getClosestEdgeIndex(g, px, py);
-        if (edgeIndex !== null) {
+        const cx = ev.clientX;
+        const cy = ev.clientY;
+        let chordLine = ev.target.classList.contains('chord-line') ? ev.target : null;
+        if (!chordLine && g.dataset.shapeType === 'regular-polygon') chordLine = getClosestChord(g, px, py);
+        if (chordLine) {
           if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
-          const cx = ev.clientX;
-          const cy = ev.clientY;
           contextMenuTimeout = setTimeout(function () {
             contextMenuTimeout = null;
-            showEdgeContextMenu(g, edgeIndex, cx, cy);
+            showChordContextMenu(g, chordLine, cx, cy);
           }, CLICK_MENU_DELAY);
+        } else if (ev.target.classList.contains('shape-body')) {
+          const edgeIndex = g.dataset.shapeType === 'circle' ? null : getClosestEdgeIndex(g, px, py);
+          if (edgeIndex !== null) {
+            if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
+            contextMenuTimeout = setTimeout(function () {
+              contextMenuTimeout = null;
+              showEdgeContextMenu(g, edgeIndex, cx, cy);
+            }, CLICK_MENU_DELAY);
+          }
         }
       }
       shapeDrag = null;
@@ -2726,8 +3163,8 @@
 
     g.addEventListener('mousedown', function (ev) {
       if (ev.target.classList.contains('vertex')) return;
-      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label') || ev.target.classList.contains('circle-line-label')) return;
-      if (altitudeDrawingMode) return;
+      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label') || ev.target.classList.contains('circle-line-label') || ev.target.classList.contains('chord-label')) return;
+      if (altitudeDrawingMode || chordDrawingMode) return;
       if (g.dataset.shapeType === 'circle' && (ev.target.classList.contains('circle-radius-line') || ev.target.classList.contains('circle-diameter-line'))) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -2797,7 +3234,7 @@
 
   workspace.addEventListener('click', function (ev) {
     const label = ev.target;
-    if (!label.classList || (!label.classList.contains('vertex-label') && !label.classList.contains('edge-label') && !label.classList.contains('altitude-label') && !label.classList.contains('circle-line-label'))) return;
+    if (!label.classList || (!label.classList.contains('vertex-label') && !label.classList.contains('edge-label') && !label.classList.contains('altitude-label') && !label.classList.contains('circle-line-label') && !label.classList.contains('chord-label'))) return;
     if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
     const cx = ev.clientX;
     const cy = ev.clientY;

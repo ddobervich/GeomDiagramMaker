@@ -177,6 +177,11 @@ body {
   cursor: pointer;
 }
 
+.shape-group .chord-line {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
 .shape-group .circle-radius-line,
 .shape-group .circle-diameter-line {
   pointer-events: stroke;
