@@ -470,6 +470,7 @@
         if (alt.labelText) { label.textContent = alt.labelText; label.setAttribute('data-label', alt.labelText); }
         if (alt.fontSize != null) setLabelFontSize(label, alt.fontSize);
         altitudeLabelsGroup.appendChild(label);
+        addRightAngleMarkAtAltitudeFoot(g, altLine);
       }
     });
     }
@@ -1106,6 +1107,7 @@
           label.setAttribute('dominant-baseline', 'middle');
           altLabelsGroup.appendChild(label);
         }
+        addRightAngleMarkAtAltitudeFoot(shapeGroup, altLine);
       }
       tempLine.remove();
       altitudeDrawingMode = null;
@@ -2204,6 +2206,7 @@
         }
       }
     });
+    updateAltitudeRightAngleMarks(g);
   }
 
   const EDGE_LABEL_OFFSET_X = 0;
@@ -2544,11 +2547,118 @@
     g.appendChild(marksGroup);
   }
 
+  function addRightAngleMarkAtAltitudeFoot(g, altLine) {
+    const aid = altLine.getAttribute('data-altitude-id');
+    if (!aid || g.querySelector('.right-angle-mark[data-altitude-id="' + aid + '"]')) return;
+    const fx = parseFloat(altLine.getAttribute('x2'));
+    const fy = parseFloat(altLine.getAttribute('y2'));
+    const vx = parseFloat(altLine.getAttribute('x1'));
+    const vy = parseFloat(altLine.getAttribute('y1'));
+    const edgeIndex = parseInt(altLine.getAttribute('data-edge-index'), 10);
+    const points = getVertexCoords(g);
+    const n = points.length;
+    if (isNaN(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) return;
+    const ax = points[edgeIndex][0];
+    const ay = points[edgeIndex][1];
+    const bx = points[(edgeIndex + 1) % n][0];
+    const by = points[(edgeIndex + 1) % n][1];
+    let ux = bx - ax;
+    let uy = by - ay;
+    const edgeLen = Math.hypot(ux, uy) || 1e-6;
+    ux /= edgeLen;
+    uy /= edgeLen;
+    let wx = vx - fx;
+    let wy = vy - fy;
+    const altLen = Math.hypot(wx, wy) || 1e-6;
+    wx /= altLen;
+    wy /= altLen;
+    const s = RIGHT_ANGLE_MARK_SIZE;
+    const xA = fx + wx * s;
+    const yA = fy + wy * s;
+    const xB = fx + wx * s + ux * s;
+    const yB = fy + wy * s + uy * s;
+    const xC = fx + ux * s;
+    const yC = fy + uy * s;
+    const xD = fx + ux * s + wx * s;
+    const yD = fy + uy * s + wy * s;
+    const mark = document.createElementNS(SVG_NS, 'g');
+    mark.setAttribute('class', 'right-angle-mark');
+    mark.setAttribute('data-altitude-id', aid);
+    const edgeLine = g.querySelector('.shape-edge');
+    const edgeStrokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', 'right-angle-mark-line');
+    path.setAttribute('d', 'M' + xA + ',' + yA + 'L' + xB + ',' + yB + 'M' + xC + ',' + yC + 'L' + xD + ',' + yD);
+    path.setAttributeNS(SVG_NS, 'stroke', '#000000');
+    path.setAttributeNS(SVG_NS, 'stroke-width', edgeStrokeWidth);
+    path.setAttributeNS(SVG_NS, 'fill', 'none');
+    path.style.setProperty('stroke', '#000000');
+    path.style.setProperty('stroke-width', edgeStrokeWidth + 'px');
+    path.style.setProperty('fill', 'none');
+    mark.appendChild(path);
+    let marksGroup = g.querySelector('.right-angle-marks');
+    if (!marksGroup) {
+      marksGroup = document.createElementNS(SVG_NS, 'g');
+      marksGroup.setAttribute('class', 'right-angle-marks');
+      g.appendChild(marksGroup);
+    }
+    marksGroup.appendChild(mark);
+    g.appendChild(marksGroup);
+  }
+
+  function updateAltitudeRightAngleMarks(g) {
+    const points = getVertexCoords(g);
+    const n = points.length;
+    g.querySelectorAll('.right-angle-mark[data-altitude-id]').forEach(function (mark) {
+      const aid = mark.getAttribute('data-altitude-id');
+      const altLine = g.querySelector('.altitude-line[data-altitude-id="' + aid + '"]');
+      if (!altLine) { mark.remove(); return; }
+      const fx = parseFloat(altLine.getAttribute('x2'));
+      const fy = parseFloat(altLine.getAttribute('y2'));
+      const vx = parseFloat(altLine.getAttribute('x1'));
+      const vy = parseFloat(altLine.getAttribute('y1'));
+      const edgeIndex = parseInt(altLine.getAttribute('data-edge-index'), 10);
+      if (isNaN(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) return;
+      const ax = points[edgeIndex][0];
+      const ay = points[edgeIndex][1];
+      const bx = points[(edgeIndex + 1) % n][0];
+      const by = points[(edgeIndex + 1) % n][1];
+      let ux = bx - ax;
+      let uy = by - ay;
+      const edgeLen = Math.hypot(ux, uy) || 1e-6;
+      ux /= edgeLen;
+      uy /= edgeLen;
+      let wx = vx - fx;
+      let wy = vy - fy;
+      const altLen = Math.hypot(wx, wy) || 1e-6;
+      wx /= altLen;
+      wy /= altLen;
+      const s = RIGHT_ANGLE_MARK_SIZE;
+      const xA = fx + wx * s;
+      const yA = fy + wy * s;
+      const xB = fx + wx * s + ux * s;
+      const yB = fy + wy * s + uy * s;
+      const xC = fx + ux * s;
+      const yC = fy + uy * s;
+      const xD = fx + ux * s + wx * s;
+      const yD = fy + uy * s + wy * s;
+      const path = mark.querySelector('.right-angle-mark-line');
+      if (path) {
+        path.setAttribute('d', 'M' + xA + ',' + yA + 'L' + xB + ',' + yB + 'M' + xC + ',' + yC + 'L' + xD + ',' + yD);
+        const edgeLine = g.querySelector('.shape-edge');
+        const edgeStrokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+        path.setAttributeNS(SVG_NS, 'stroke-width', edgeStrokeWidth);
+        path.style.setProperty('stroke-width', edgeStrokeWidth + 'px');
+      }
+    });
+  }
+
   function updateRightAngleMarks(g) {
     const points = getVertexCoords(g);
     const n = points.length;
     const marks = Array.from(g.querySelectorAll('.right-angle-mark'));
     marks.forEach(function (mark) {
+      if (mark.hasAttribute('data-altitude-id')) return;
       const vertexIndex = parseInt(mark.getAttribute('data-vertex-index'), 10);
       if (vertexIndex < 0 || vertexIndex >= n) {
         mark.remove();
