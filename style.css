@@ -177,6 +177,12 @@ body {
   cursor: pointer;
 }
 
+.shape-group .circle-radius-line,
+.shape-group .circle-diameter-line {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
 .shape-group .altitude-label {
   font-size: 22pt;
   font-family: 'Segoe UI', system-ui, sans-serif;

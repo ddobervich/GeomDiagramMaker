@@ -93,7 +93,7 @@
         const vi = parseInt(mark.getAttribute('data-vertex-index'), 10);
         if (!isNaN(vi)) rightAngleMarks.push(vi);
       });
-      shapesState.push({
+      const state = {
         shapeType,
         vertices,
         vertexLabels,
@@ -102,7 +102,32 @@
         edgeStyles,
         altitudes,
         rightAngleMarks
-      });
+      };
+      if (shapeType === 'circle') {
+        const circleRadii = [];
+        g.querySelectorAll('.circle-radius-line').forEach(line => {
+          circleRadii.push({
+            angle: parseFloat(line.getAttribute('data-angle')) || 0,
+            stroke: line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#000',
+            strokeWidth: line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2',
+            strokeDasharray: line.getAttribute('data-stroke-dasharray') || undefined,
+            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined
+          });
+        });
+        const circleDiameters = [];
+        g.querySelectorAll('.circle-diameter-line').forEach(line => {
+          circleDiameters.push({
+            angle: parseFloat(line.getAttribute('data-angle')) || 0,
+            stroke: line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#000',
+            strokeWidth: line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2',
+            strokeDasharray: line.getAttribute('data-stroke-dasharray') || undefined,
+            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined
+          });
+        });
+        state.circleRadii = circleRadii;
+        state.circleDiameters = circleDiameters;
+      }
+      shapesState.push(state);
     });
     return { shapes: shapesState, nextAltitudeId: maxAltitudeId + 1 };
   }
@@ -225,6 +250,56 @@
     const altitudeLabelsGroup = document.createElementNS(SVG_NS, 'g');
     altitudeLabelsGroup.setAttribute('class', 'altitude-labels');
     g.appendChild(altitudeLabelsGroup);
+    if (isCircle && n >= 2) {
+      const cx = vertices[0][0];
+      const cy = vertices[0][1];
+      const r = Math.hypot(vertices[1][0] - cx, vertices[1][1] - cy) || 1;
+      const circleLinesGroup = document.createElementNS(SVG_NS, 'g');
+      circleLinesGroup.setAttribute('class', 'circle-lines');
+      g.insertBefore(circleLinesGroup, labelsGroup);
+      (s.circleRadii || []).forEach(function (rad, idx) {
+        const angle = rad.angle != null ? rad.angle : 0.5 + idx * 0.7;
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('class', 'circle-radius-line');
+        line.setAttribute('data-type', 'radius');
+        line.setAttribute('data-radius-index', String(idx));
+        line.setAttribute('data-angle', String(angle));
+        line.setAttribute('x1', cx);
+        line.setAttribute('y1', cy);
+        line.setAttribute('x2', cx + r * Math.cos(angle));
+        line.setAttribute('y2', cy + r * Math.sin(angle));
+        line.setAttribute('stroke', rad.stroke || '#000');
+        line.setAttribute('data-stroke', rad.stroke || '#000');
+        line.setAttribute('stroke-width', rad.strokeWidth || '2');
+        line.setAttribute('data-stroke-width', rad.strokeWidth || '2');
+        if (rad.strokeDasharray) { line.setAttribute('stroke-dasharray', rad.strokeDasharray); line.setAttribute('data-stroke-dasharray', rad.strokeDasharray); }
+        if (rad.strokeLinecap) { line.setAttribute('stroke-linecap', rad.strokeLinecap); line.setAttribute('data-stroke-linecap', rad.strokeLinecap); }
+        line.setAttribute('pointer-events', 'stroke');
+        circleLinesGroup.appendChild(line);
+      });
+      (s.circleDiameters || []).forEach(function (diam, idx) {
+        const angle = diam.angle != null ? diam.angle : idx * 0.6;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('class', 'circle-diameter-line');
+        line.setAttribute('data-type', 'diameter');
+        line.setAttribute('data-diameter-index', String(idx));
+        line.setAttribute('data-angle', String(angle));
+        line.setAttribute('x1', cx - r * cos);
+        line.setAttribute('y1', cy - r * sin);
+        line.setAttribute('x2', cx + r * cos);
+        line.setAttribute('y2', cy + r * sin);
+        line.setAttribute('stroke', diam.stroke || '#000');
+        line.setAttribute('data-stroke', diam.stroke || '#000');
+        line.setAttribute('stroke-width', diam.strokeWidth || '2');
+        line.setAttribute('data-stroke-width', diam.strokeWidth || '2');
+        if (diam.strokeDasharray) { line.setAttribute('stroke-dasharray', diam.strokeDasharray); line.setAttribute('data-stroke-dasharray', diam.strokeDasharray); }
+        if (diam.strokeLinecap) { line.setAttribute('stroke-linecap', diam.strokeLinecap); line.setAttribute('data-stroke-linecap', diam.strokeLinecap); }
+        line.setAttribute('pointer-events', 'stroke');
+        circleLinesGroup.appendChild(line);
+      });
+    }
     if (!isCircle) {
     (s.altitudes || []).forEach((alt, idx) => {
       const aid = String(startAltitudeId + idx);
@@ -453,17 +528,51 @@
       const rowAltitude = document.createElement('div');
       rowAltitude.className = 'context-menu-row';
       rowAltitude.innerHTML = '<label>Tools</label>';
-      const btnAltitude = document.createElement('button');
-      btnAltitude.type = 'button';
-      btnAltitude.className = 'context-menu-style-btn';
-      btnAltitude.textContent = 'Draw an altitude';
-      btnAltitude.addEventListener('click', function () {
-        hideContextMenu();
-        startAltitudeDrawing(circle);
-      });
-      rowAltitude.appendChild(btnAltitude);
       const shapeGroup = circle.closest('.shape-group');
       const vertexIndex = parseInt(circle.getAttribute('data-index'), 10);
+      const isCircleShape = shapeGroup && shapeGroup.dataset.shapeType === 'circle';
+      if (!isCircleShape) {
+        const btnAltitude = document.createElement('button');
+        btnAltitude.type = 'button';
+        btnAltitude.className = 'context-menu-style-btn';
+        btnAltitude.textContent = 'Draw an altitude';
+        btnAltitude.addEventListener('click', function () {
+          hideContextMenu();
+          startAltitudeDrawing(circle);
+        });
+        rowAltitude.appendChild(btnAltitude);
+      } else {
+        const radiusLines = shapeGroup.querySelectorAll('.circle-radius-line');
+        const diameterLines = shapeGroup.querySelectorAll('.circle-diameter-line');
+        const btnRadius = document.createElement('button');
+        btnRadius.type = 'button';
+        btnRadius.className = 'context-menu-style-btn';
+        btnRadius.textContent = radiusLines.length === 0 ? 'Draw a radius' : 'Remove a radius';
+        btnRadius.addEventListener('click', function () {
+          hideContextMenu();
+          if (radiusLines.length === 0) {
+            addCircleRadius(shapeGroup);
+          } else {
+            removeCircleRadius(shapeGroup);
+          }
+          pushUndo();
+        });
+        rowAltitude.appendChild(btnRadius);
+        const btnDiameter = document.createElement('button');
+        btnDiameter.type = 'button';
+        btnDiameter.className = 'context-menu-style-btn';
+        btnDiameter.textContent = diameterLines.length === 0 ? 'Draw a diameter' : 'Remove a diameter';
+        btnDiameter.addEventListener('click', function () {
+          hideContextMenu();
+          if (diameterLines.length === 0) {
+            addCircleDiameter(shapeGroup);
+          } else {
+            removeCircleDiameter(shapeGroup);
+          }
+          pushUndo();
+        });
+        rowAltitude.appendChild(btnDiameter);
+      }
       if (shapeGroup && !isNaN(vertexIndex) && isNearRightAngle(shapeGroup, vertexIndex)) {
         const existingMark = shapeGroup.querySelector('.right-angle-mark[data-vertex-index="' + vertexIndex + '"]');
         const btnRightAngle = document.createElement('button');
@@ -806,6 +915,142 @@
     });
   }
 
+  function showCircleLineContextMenu(shapeGroup, line, clientX, clientY) {
+    const strokeWidth = line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2';
+    const stroke = line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#000000';
+    const titleText = line.classList.contains('circle-radius-line') ? 'Radius' : 'Diameter';
+    showContextMenuAt(clientX, clientY, function (menu) {
+      const title = document.createElement('div');
+      title.className = 'context-menu-title';
+      title.textContent = titleText;
+      menu.appendChild(title);
+      const rowWidth = document.createElement('div');
+      rowWidth.className = 'context-menu-row';
+      rowWidth.innerHTML = '<label>Line width</label>';
+      const minW = 1, maxW = 10;
+      let currentW = Math.max(minW, Math.min(maxW, parseInt(strokeWidth, 10) || 2));
+      const widthDisplay = document.createElement('span');
+      widthDisplay.className = 'context-menu-size-value';
+      widthDisplay.textContent = currentW;
+      const btnMinus = document.createElement('button');
+      btnMinus.type = 'button';
+      btnMinus.className = 'context-menu-size-btn';
+      btnMinus.textContent = '−';
+      const btnPlus = document.createElement('button');
+      btnPlus.type = 'button';
+      btnPlus.className = 'context-menu-size-btn';
+      btnPlus.textContent = '+';
+      function applyWidth(val) {
+        currentW = val;
+        widthDisplay.textContent = currentW;
+        line.setAttribute('stroke-width', String(val));
+        line.setAttribute('data-stroke-width', String(val));
+        var da = (line.getAttribute('data-stroke-dasharray') || '').trim();
+        if (da.indexOf('0,') === 0 || da.indexOf('0 ,') === 0) {
+          var gap = Math.max(Math.round(val * 2.2), 4);
+          line.setAttribute('stroke-dasharray', '0, ' + gap);
+          line.setAttribute('data-stroke-dasharray', '0, ' + gap);
+        }
+        btnMinus.disabled = currentW <= minW;
+        btnPlus.disabled = currentW >= maxW;
+      }
+      btnMinus.addEventListener('click', function () { if (currentW > minW) applyWidth(currentW - 1); });
+      btnPlus.addEventListener('click', function () { if (currentW < maxW) applyWidth(currentW + 1); });
+      applyWidth(currentW);
+      rowWidth.appendChild(btnMinus);
+      rowWidth.appendChild(widthDisplay);
+      rowWidth.appendChild(btnPlus);
+      menu.appendChild(rowWidth);
+      const rowStyle = document.createElement('div');
+      rowStyle.className = 'context-menu-row';
+      rowStyle.innerHTML = '<label>Line style</label>';
+      const dasharray = (line.getAttribute('data-stroke-dasharray') || line.getAttribute('stroke-dasharray') || '').trim();
+      const isDotted = (dasharray.indexOf('0,') === 0 || dasharray.indexOf('0 ,') === 0);
+      const isDashed = !isDotted && (dasharray === '8,4' || (dasharray.indexOf(',') !== -1 && dasharray !== ''));
+      const isSolid = !dasharray || dasharray === 'none' || (!isDashed && !isDotted);
+      function setStyle(dasharrayValue) {
+        if (dasharrayValue === 'dotted') {
+          var gap = Math.max(Math.round(currentW * 2.2), 4);
+          var dottedVal = '0, ' + gap;
+          line.setAttribute('stroke-linecap', 'round');
+          line.setAttribute('stroke-dasharray', dottedVal);
+          line.setAttribute('data-stroke-linecap', 'round');
+          line.setAttribute('data-stroke-dasharray', dottedVal);
+        } else {
+          line.setAttribute('stroke-linecap', 'butt');
+          line.setAttribute('data-stroke-linecap', 'butt');
+          line.setAttribute('stroke-dasharray', dasharrayValue || '');
+          line.setAttribute('data-stroke-dasharray', dasharrayValue || '');
+        }
+      }
+      const btnSolid = document.createElement('button');
+      btnSolid.type = 'button';
+      btnSolid.className = 'context-menu-style-btn' + (isSolid ? ' context-menu-style-active' : '');
+      btnSolid.textContent = 'Solid';
+      btnSolid.addEventListener('click', function () { setStyle(''); });
+      const btnDashed = document.createElement('button');
+      btnDashed.type = 'button';
+      btnDashed.className = 'context-menu-style-btn' + (isDashed ? ' context-menu-style-active' : '');
+      btnDashed.textContent = 'Dashed';
+      btnDashed.addEventListener('click', function () { setStyle('8,4'); });
+      const btnDotted = document.createElement('button');
+      btnDotted.type = 'button';
+      btnDotted.className = 'context-menu-style-btn' + (isDotted ? ' context-menu-style-active' : '');
+      btnDotted.textContent = 'Dotted';
+      btnDotted.addEventListener('click', function () { setStyle('dotted'); });
+      rowStyle.appendChild(btnSolid);
+      rowStyle.appendChild(btnDashed);
+      rowStyle.appendChild(btnDotted);
+      menu.appendChild(rowStyle);
+      const rowColor = document.createElement('div');
+      rowColor.className = 'context-menu-row';
+      rowColor.innerHTML = '<label>Color</label>';
+      const colorWrap = document.createElement('div');
+      colorWrap.className = 'context-menu-colors';
+      PRESET_COLORS.forEach(function (hex) {
+        const swatch = document.createElement('span');
+        swatch.className = 'context-menu-color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.addEventListener('click', function () {
+          line.style.stroke = hex;
+          line.setAttribute('data-stroke', hex);
+        });
+        colorWrap.appendChild(swatch);
+      });
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.value = (stroke.startsWith('#') ? stroke : '#000000').slice(0, 7);
+      colorInput.style.width = '28px';
+      colorInput.style.height = '24px';
+      colorInput.style.border = 'none';
+      colorInput.style.cursor = 'pointer';
+      colorInput.addEventListener('input', function () {
+        line.style.stroke = colorInput.value;
+        line.setAttribute('data-stroke', colorInput.value);
+      });
+      colorWrap.appendChild(colorInput);
+      rowColor.appendChild(colorWrap);
+      menu.appendChild(rowColor);
+      const rowGray = document.createElement('div');
+      rowGray.className = 'context-menu-row';
+      rowGray.innerHTML = '<label>Grayscale</label>';
+      const grayWrap = document.createElement('div');
+      grayWrap.className = 'context-menu-colors';
+      GRAYSCALE_COLORS.forEach(function (hex) {
+        const swatch = document.createElement('span');
+        swatch.className = 'context-menu-color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.addEventListener('click', function () {
+          line.style.stroke = hex;
+          line.setAttribute('data-stroke', hex);
+        });
+        grayWrap.appendChild(swatch);
+      });
+      rowGray.appendChild(grayWrap);
+      menu.appendChild(rowGray);
+    });
+  }
+
   function getWorkspacePoint(ev) {
     const rect = workspace.getBoundingClientRect();
     const scaleX = workspace.width.baseVal.value / rect.width;
@@ -894,7 +1139,7 @@
     coords.forEach((p, i) => {
       const circle = document.createElementNS(SVG_NS, 'circle');
       circle.classList.add('vertex');
-      circle.setAttribute('r', isCircle && i === 0 ? 2 : 3);
+      circle.setAttribute('r', isCircle ? 5 : 3);
       circle.setAttribute('cx', p[0]);
       circle.setAttribute('cy', p[1]);
       circle.setAttribute('data-index', i);
@@ -949,6 +1194,12 @@
     altitudeLabelsGroup.setAttribute('class', 'altitude-labels');
     g.appendChild(altitudeLabelsGroup);
 
+    if (isCircle) {
+      const circleLinesGroup = document.createElementNS(SVG_NS, 'g');
+      circleLinesGroup.setAttribute('class', 'circle-lines');
+      g.insertBefore(circleLinesGroup, g.querySelector('.vertex-labels'));
+    }
+
     const rightAngleMarksGroup = document.createElementNS(SVG_NS, 'g');
     rightAngleMarksGroup.setAttribute('class', 'right-angle-marks');
     g.appendChild(rightAngleMarksGroup);
@@ -997,6 +1248,7 @@
       shapeBody.setAttribute('cx', cx);
       shapeBody.setAttribute('cy', cy);
       shapeBody.setAttribute('r', r);
+      updateCircleLines(g);
       updateLabelPositions(g);
       return;
     }
@@ -1106,6 +1358,113 @@
       parseFloat(c.getAttribute('cx')),
       parseFloat(c.getAttribute('cy'))
     ]);
+  }
+
+  function getCircleCenterAndRadius(g) {
+    const points = getVertexCoords(g);
+    if (points.length < 2) return null;
+    const cx = points[0][0];
+    const cy = points[0][1];
+    const r = Math.hypot(points[1][0] - cx, points[1][1] - cy) || 1;
+    return { cx: cx, cy: cy, r: r };
+  }
+
+  let pendingCircleLine = null;
+
+  function addCircleRadius(g) {
+    const geom = getCircleCenterAndRadius(g);
+    if (!geom) return;
+    let group = g.querySelector('.circle-lines');
+    if (!group) {
+      group = document.createElementNS(SVG_NS, 'g');
+      group.setAttribute('class', 'circle-lines');
+      g.insertBefore(group, g.querySelector('.vertex-labels'));
+    }
+    const count = g.querySelectorAll('.circle-radius-line').length;
+    const angle = 0.5 + count * 0.7;
+    const x2 = geom.cx + geom.r * Math.cos(angle);
+    const y2 = geom.cy + geom.r * Math.sin(angle);
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('class', 'circle-radius-line');
+    line.setAttribute('data-type', 'radius');
+    line.setAttribute('data-radius-index', String(count));
+    line.setAttribute('data-angle', String(angle));
+    line.setAttribute('x1', geom.cx);
+    line.setAttribute('y1', geom.cy);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('stroke', '#000');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('pointer-events', 'stroke');
+    group.appendChild(line);
+  }
+
+  function addCircleDiameter(g) {
+    const geom = getCircleCenterAndRadius(g);
+    if (!geom) return;
+    let group = g.querySelector('.circle-lines');
+    if (!group) {
+      group = document.createElementNS(SVG_NS, 'g');
+      group.setAttribute('class', 'circle-lines');
+      g.insertBefore(group, g.querySelector('.vertex-labels'));
+    }
+    const count = g.querySelectorAll('.circle-diameter-line').length;
+    const angle = count * 0.6;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const x1 = geom.cx - geom.r * cos;
+    const y1 = geom.cy - geom.r * sin;
+    const x2 = geom.cx + geom.r * cos;
+    const y2 = geom.cy + geom.r * sin;
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('class', 'circle-diameter-line');
+    line.setAttribute('data-type', 'diameter');
+    line.setAttribute('data-diameter-index', String(count));
+    line.setAttribute('data-angle', String(angle));
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('stroke', '#000');
+    line.setAttribute('data-stroke', '#000');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('data-stroke-width', '2');
+    line.setAttribute('pointer-events', 'stroke');
+    group.appendChild(line);
+  }
+
+  function removeCircleRadius(g) {
+    const lines = g.querySelectorAll('.circle-radius-line');
+    if (lines.length === 0) return;
+    lines[lines.length - 1].remove();
+  }
+
+  function removeCircleDiameter(g) {
+    const lines = g.querySelectorAll('.circle-diameter-line');
+    if (lines.length === 0) return;
+    lines[lines.length - 1].remove();
+  }
+
+  function updateCircleLines(g) {
+    const geom = getCircleCenterAndRadius(g);
+    if (!geom) return;
+    const { cx, cy, r } = geom;
+    g.querySelectorAll('.circle-radius-line').forEach(function (line) {
+      const angle = parseFloat(line.getAttribute('data-angle')) || 0;
+      line.setAttribute('x1', cx);
+      line.setAttribute('y1', cy);
+      line.setAttribute('x2', cx + r * Math.cos(angle));
+      line.setAttribute('y2', cy + r * Math.sin(angle));
+    });
+    g.querySelectorAll('.circle-diameter-line').forEach(function (line) {
+      const angle = parseFloat(line.getAttribute('data-angle')) || 0;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      line.setAttribute('x1', cx - r * cos);
+      line.setAttribute('y1', cy - r * sin);
+      line.setAttribute('x2', cx + r * cos);
+      line.setAttribute('y2', cy + r * sin);
+    });
   }
 
   const RIGHT_ANGLE_COS_THRESHOLD = 0.08;
@@ -1354,6 +1713,16 @@
           c.setAttribute('cx', cx + rx * cos - ry * sin);
           c.setAttribute('cy', cy + rx * sin + ry * cos);
         });
+        if (rotatingShape.g.dataset.shapeType === 'circle' && rotatingShape.startRadiusAngles) {
+          const radiusLines = rotatingShape.g.querySelectorAll('.circle-radius-line');
+          radiusLines.forEach(function (line, i) {
+            line.setAttribute('data-angle', String((rotatingShape.startRadiusAngles[i] || 0) + delta));
+          });
+          const diameterLines = rotatingShape.g.querySelectorAll('.circle-diameter-line');
+          diameterLines.forEach(function (line, i) {
+            line.setAttribute('data-angle', String((rotatingShape.startDiameterAngles[i] || 0) + delta));
+          });
+        }
         updatePolygonFromVertices(rotatingShape.g);
         document.body.style.cursor = ROTATION_CURSOR;
       } else if (scalingShape) {
@@ -1398,10 +1767,11 @@
           const shapeGroup = pendingVertex.closest('.shape-group');
           const startPoints = getVertexCoords(shapeGroup);
           if (pendingVertexCtrl) {
-            const centerX = startPoints.reduce((s, p) => s + p[0], 0) / startPoints.length;
-            const centerY = startPoints.reduce((s, p) => s + p[1], 0) / startPoints.length;
+            const isCircle = shapeGroup.dataset.shapeType === 'circle';
+            const centerX = isCircle && startPoints.length >= 2 ? startPoints[0][0] : startPoints.reduce((s, p) => s + p[0], 0) / startPoints.length;
+            const centerY = isCircle && startPoints.length >= 2 ? startPoints[0][1] : startPoints.reduce((s, p) => s + p[1], 0) / startPoints.length;
             const [mx, my] = getWorkspacePoint(ev);
-            rotatingShape = {
+            const rot = {
               g: shapeGroup,
               centerX: centerX,
               centerY: centerY,
@@ -1409,6 +1779,11 @@
               startAngle: Math.atan2(my - centerY, mx - centerX),
               draggedIndex: parseInt(pendingVertex.getAttribute('data-index'), 10)
             };
+            if (isCircle) {
+              rot.startRadiusAngles = Array.from(shapeGroup.querySelectorAll('.circle-radius-line')).map(function (line) { return parseFloat(line.getAttribute('data-angle')) || 0; });
+              rot.startDiameterAngles = Array.from(shapeGroup.querySelectorAll('.circle-diameter-line')).map(function (line) { return parseFloat(line.getAttribute('data-angle')) || 0; });
+            }
+            rotatingShape = rot;
             document.body.style.cursor = ROTATION_CURSOR;
           } else if (pendingVertexShift) {
             const centerX = startPoints.reduce((s, p) => s + p[0], 0) / startPoints.length;
@@ -1994,6 +2369,25 @@
       if (ev.target.classList.contains('vertex')) return;
       if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label')) return;
       if (altitudeDrawingMode) return;
+      if (g.dataset.shapeType === 'circle' && (ev.target.classList.contains('circle-radius-line') || ev.target.classList.contains('circle-diameter-line'))) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        pendingCircleLine = { line: ev.target, startX: ev.clientX, startY: ev.clientY, moved: false };
+        const onMove = function (e) {
+          if (pendingCircleLine && Math.hypot(e.clientX - pendingCircleLine.startX, e.clientY - pendingCircleLine.startY) >= 3) pendingCircleLine.moved = true;
+        };
+        const onUp = function (e) {
+          document.removeEventListener('mouseup', onUp);
+          document.removeEventListener('mousemove', onMove);
+          if (pendingCircleLine && !pendingCircleLine.moved && ev.target === pendingCircleLine.line) {
+            showCircleLineContextMenu(g, pendingCircleLine.line, e.clientX, e.clientY);
+          }
+          pendingCircleLine = null;
+        };
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('mousemove', onMove);
+        return;
+      }
       ev.preventDefault();
       startShapeDrag(ev);
       document.addEventListener('mousemove', moveShapeDrag);
