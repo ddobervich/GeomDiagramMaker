@@ -1,13 +1,25 @@
 (function () {
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const SCALE = 480;
+  function regularPolygonPoints(n) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * 2 * Math.PI - Math.PI / 2;
+      pts.push([0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a)]);
+    }
+    return pts;
+  }
+
+  const DEFAULT_REGULAR_POLYGON_SIDES = 6;
+
   const shapes = {
     'rectangle': [[0, 0], [1, 0], [1, 0.6], [0, 0.6]],
     'parallelogram': [[0, 0], [1, 0], [0.85, 0.6], [-0.15, 0.6]],
     'trapezoid': [[0.15, 0], [0.85, 0], [1, 0.6], [0, 0.6]],
     'right-triangle': [[0, 0], [1, 0], [0, 0.6]],
     'equilateral-triangle': [[0.5, 0], [1, 0.866], [0, 0.866]],
-    'circle': [[0.5, 0.5], [1, 0.5]]
+    'circle': [[0.5, 0.5], [1, 0.5]],
+    'regular-polygon': null
   };
 
   const workspace = document.getElementById('workspace');
@@ -105,28 +117,39 @@
       };
       if (shapeType === 'circle') {
         const circleRadii = [];
-        g.querySelectorAll('.circle-radius-line').forEach(line => {
+        g.querySelectorAll('.circle-radius-line').forEach((line, i) => {
+          const idx = line.getAttribute('data-radius-index');
+          const label = g.querySelector('.circle-line-label[data-type="radius"][data-radius-index="' + idx + '"]');
           circleRadii.push({
             angle: parseFloat(line.getAttribute('data-angle')) || 0,
             stroke: line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#000',
             strokeWidth: line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2',
             strokeDasharray: line.getAttribute('data-stroke-dasharray') || undefined,
-            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined
+            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined,
+            labelText: label ? (label.textContent || label.getAttribute('data-label') || '') : '',
+            offsetDx: label && label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0,
+            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0
           });
         });
         const circleDiameters = [];
-        g.querySelectorAll('.circle-diameter-line').forEach(line => {
+        g.querySelectorAll('.circle-diameter-line').forEach((line, i) => {
+          const idx = line.getAttribute('data-diameter-index');
+          const label = g.querySelector('.circle-line-label[data-type="diameter"][data-diameter-index="' + idx + '"]');
           circleDiameters.push({
             angle: parseFloat(line.getAttribute('data-angle')) || 0,
             stroke: line.getAttribute('data-stroke') || line.getAttribute('stroke') || '#000',
             strokeWidth: line.getAttribute('data-stroke-width') || line.getAttribute('stroke-width') || '2',
             strokeDasharray: line.getAttribute('data-stroke-dasharray') || undefined,
-            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined
+            strokeLinecap: line.getAttribute('data-stroke-linecap') || undefined,
+            labelText: label ? (label.textContent || label.getAttribute('data-label') || '') : '',
+            offsetDx: label && label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0,
+            offsetDy: label && label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0
           });
         });
         state.circleRadii = circleRadii;
         state.circleDiameters = circleDiameters;
       }
+      if (shapeType === 'regular-polygon') state.sides = parseInt(g.dataset.sides, 10) || DEFAULT_REGULAR_POLYGON_SIDES;
       shapesState.push(state);
     });
     return { shapes: shapesState, nextAltitudeId: maxAltitudeId + 1 };
@@ -142,6 +165,7 @@
     g.classList.add('shape-group');
     g.dataset.shapeId = id;
     g.dataset.shapeType = shapeType;
+    if (shapeType === 'regular-polygon') g.dataset.sides = String(s.sides != null ? s.sides : DEFAULT_REGULAR_POLYGON_SIDES);
     const isCircle = shapeType === 'circle';
 
     if (isCircle && n >= 2) {
@@ -299,6 +323,45 @@
         line.setAttribute('pointer-events', 'stroke');
         circleLinesGroup.appendChild(line);
       });
+      const circleLineLabelsGroup = document.createElementNS(SVG_NS, 'g');
+      circleLineLabelsGroup.setAttribute('class', 'circle-line-labels');
+      g.appendChild(circleLineLabelsGroup);
+      (s.circleRadii || []).forEach(function (rad, idx) {
+        const line = g.querySelector('.circle-radius-line[data-radius-index="' + idx + '"]');
+        if (!line) return;
+        const mid = { mx: (parseFloat(line.getAttribute('x1')) + parseFloat(line.getAttribute('x2'))) / 2, my: (parseFloat(line.getAttribute('y1')) + parseFloat(line.getAttribute('y2'))) / 2 };
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('class', 'circle-line-label edge-label');
+        label.setAttribute('data-type', 'radius');
+        label.setAttribute('data-radius-index', String(idx));
+        label.setAttribute('x', mid.mx + (rad.offsetDx != null ? rad.offsetDx : 0));
+        label.setAttribute('y', mid.my + (rad.offsetDy != null ? rad.offsetDy : 0));
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('dominant-baseline', 'middle');
+        label.setAttribute('pointer-events', 'all');
+        label.setAttribute('data-offset-dx', String(rad.offsetDx != null ? rad.offsetDx : 0));
+        label.setAttribute('data-offset-dy', String(rad.offsetDy != null ? rad.offsetDy : 0));
+        if (rad.labelText) { label.textContent = rad.labelText; label.setAttribute('data-label', rad.labelText); }
+        circleLineLabelsGroup.appendChild(label);
+      });
+      (s.circleDiameters || []).forEach(function (diam, idx) {
+        const line = g.querySelector('.circle-diameter-line[data-diameter-index="' + idx + '"]');
+        if (!line) return;
+        const mid = { mx: (parseFloat(line.getAttribute('x1')) + parseFloat(line.getAttribute('x2'))) / 2, my: (parseFloat(line.getAttribute('y1')) + parseFloat(line.getAttribute('y2'))) / 2 };
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('class', 'circle-line-label edge-label');
+        label.setAttribute('data-type', 'diameter');
+        label.setAttribute('data-diameter-index', String(idx));
+        label.setAttribute('x', mid.mx + (diam.offsetDx != null ? diam.offsetDx : 0));
+        label.setAttribute('y', mid.my + (diam.offsetDy != null ? diam.offsetDy : 0));
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('dominant-baseline', 'middle');
+        label.setAttribute('pointer-events', 'all');
+        label.setAttribute('data-offset-dx', String(diam.offsetDx != null ? diam.offsetDx : 0));
+        label.setAttribute('data-offset-dy', String(diam.offsetDy != null ? diam.offsetDy : 0));
+        if (diam.labelText) { label.textContent = diam.labelText; label.setAttribute('data-label', diam.labelText); }
+        circleLineLabelsGroup.appendChild(label);
+      });
     }
     if (!isCircle) {
     (s.altitudes || []).forEach((alt, idx) => {
@@ -348,9 +411,36 @@
     enableVertexLabels(g);
     enableLabelDrag(g);
     enableEdgeLabels(g);
+    enableEdgeLabelDrag(g);
+    if (isCircle) enableCircleLineLabelDrag(g);
     enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
     g.addEventListener('dblclick', function (ev) {
+      if (ev.target.classList.contains('circle-radius-line') || ev.target.classList.contains('circle-diameter-line')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) {
+          clearTimeout(contextMenuTimeout);
+          contextMenuTimeout = null;
+        }
+        openCircleLineLabelEditor(g, ev.target);
+        return;
+      }
+      if (ev.target.classList.contains('circle-line-label')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) {
+          clearTimeout(contextMenuTimeout);
+          contextMenuTimeout = null;
+        }
+        const type = ev.target.getAttribute('data-type');
+        const idx = type === 'radius' ? ev.target.getAttribute('data-radius-index') : ev.target.getAttribute('data-diameter-index');
+        const line = type === 'radius'
+          ? g.querySelector('.circle-radius-line[data-radius-index="' + idx + '"]')
+          : g.querySelector('.circle-diameter-line[data-diameter-index="' + idx + '"]');
+        if (line) openCircleLineLabelEditor(g, line);
+        return;
+      }
       if (!ev.target.classList.contains('altitude-line')) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -1083,7 +1173,8 @@
   }
 
   function createShape(shapeType, x, y) {
-    const points = shapes[shapeType];
+    let points = shapes[shapeType];
+    if (shapeType === 'regular-polygon') points = regularPolygonPoints(DEFAULT_REGULAR_POLYGON_SIDES);
     if (!points) return null;
     const coords = pointsToPolygon(points, x, y);
     const id = 'shape-' + ++shapeIdCounter;
@@ -1092,6 +1183,7 @@
     g.classList.add('shape-group');
     g.dataset.shapeId = id;
     g.dataset.shapeType = shapeType;
+    if (shapeType === 'regular-polygon') g.dataset.sides = String(DEFAULT_REGULAR_POLYGON_SIDES);
 
     const n = coords.length;
     const isCircle = shapeType === 'circle';
@@ -1213,9 +1305,35 @@
     enableLabelDrag(g);
     enableEdgeLabels(g);
     enableEdgeLabelDrag(g);
+    if (isCircle) enableCircleLineLabelDrag(g);
     enableAltitudeLabelDrag(g);
     enableShapeDragToTrash(g);
     g.addEventListener('dblclick', function (ev) {
+      if (ev.target.classList.contains('circle-radius-line') || ev.target.classList.contains('circle-diameter-line')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) {
+          clearTimeout(contextMenuTimeout);
+          contextMenuTimeout = null;
+        }
+        openCircleLineLabelEditor(g, ev.target);
+        return;
+      }
+      if (ev.target.classList.contains('circle-line-label')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) {
+          clearTimeout(contextMenuTimeout);
+          contextMenuTimeout = null;
+        }
+        const type = ev.target.getAttribute('data-type');
+        const idx = type === 'radius' ? ev.target.getAttribute('data-radius-index') : ev.target.getAttribute('data-diameter-index');
+        const line = type === 'radius'
+          ? g.querySelector('.circle-radius-line[data-radius-index="' + idx + '"]')
+          : g.querySelector('.circle-diameter-line[data-diameter-index="' + idx + '"]');
+        if (line) openCircleLineLabelEditor(g, line);
+        return;
+      }
       if (!ev.target.classList.contains('altitude-line')) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -1464,6 +1582,111 @@
       line.setAttribute('y1', cy - r * sin);
       line.setAttribute('x2', cx + r * cos);
       line.setAttribute('y2', cy + r * sin);
+    });
+    updateCircleLineLabelPositions(g);
+  }
+
+  function getCircleLineMidpoint(lineEl) {
+    const x1 = parseFloat(lineEl.getAttribute('x1'));
+    const y1 = parseFloat(lineEl.getAttribute('y1'));
+    const x2 = parseFloat(lineEl.getAttribute('x2'));
+    const y2 = parseFloat(lineEl.getAttribute('y2'));
+    return { mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+  }
+
+  function updateCircleLineLabelPositions(g) {
+    g.querySelectorAll('.circle-radius-line').forEach(function (line) {
+      const idx = line.getAttribute('data-radius-index');
+      const label = g.querySelector('.circle-line-label[data-type="radius"][data-radius-index="' + idx + '"]');
+      if (!label) return;
+      const mid = getCircleLineMidpoint(line);
+      const dx = label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0;
+      const dy = label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0;
+      label.setAttribute('x', mid.mx + dx);
+      label.setAttribute('y', mid.my + dy);
+    });
+    g.querySelectorAll('.circle-diameter-line').forEach(function (line) {
+      const idx = line.getAttribute('data-diameter-index');
+      const label = g.querySelector('.circle-line-label[data-type="diameter"][data-diameter-index="' + idx + '"]');
+      if (!label) return;
+      const mid = getCircleLineMidpoint(line);
+      const dx = label.hasAttribute('data-offset-dx') ? parseFloat(label.getAttribute('data-offset-dx')) : 0;
+      const dy = label.hasAttribute('data-offset-dy') ? parseFloat(label.getAttribute('data-offset-dy')) : 0;
+      label.setAttribute('x', mid.mx + dx);
+      label.setAttribute('y', mid.my + dy);
+    });
+  }
+
+  function getOrCreateCircleLineLabel(g, lineEl) {
+    const isRadius = lineEl.classList.contains('circle-radius-line');
+    const idx = isRadius ? lineEl.getAttribute('data-radius-index') : lineEl.getAttribute('data-diameter-index');
+    const type = isRadius ? 'radius' : 'diameter';
+    const attr = isRadius ? 'data-radius-index' : 'data-diameter-index';
+    let labelsGroup = g.querySelector('.circle-line-labels');
+    if (!labelsGroup) {
+      labelsGroup = document.createElementNS(SVG_NS, 'g');
+      labelsGroup.setAttribute('class', 'circle-line-labels');
+      g.appendChild(labelsGroup);
+    }
+    let label = g.querySelector('.circle-line-label[data-type="' + type + '"][' + attr + '="' + idx + '"]');
+    if (!label) {
+      const mid = getCircleLineMidpoint(lineEl);
+      label = document.createElementNS(SVG_NS, 'text');
+      label.setAttribute('class', 'circle-line-label edge-label');
+      label.setAttribute('data-type', type);
+      label.setAttribute(attr, idx);
+      label.setAttribute('x', mid.mx);
+      label.setAttribute('y', mid.my);
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('dominant-baseline', 'middle');
+      label.setAttribute('pointer-events', 'all');
+      label.setAttribute('data-offset-dx', '0');
+      label.setAttribute('data-offset-dy', '0');
+      labelsGroup.appendChild(label);
+    }
+    return label;
+  }
+
+  function openCircleLineLabelEditor(shapeGroup, lineEl, editorX, editorY) {
+    const textEl = getOrCreateCircleLineLabel(shapeGroup, lineEl);
+    const currentLabel = textEl.textContent || textEl.getAttribute('data-label') || '';
+    const tx = parseFloat(textEl.getAttribute('x'));
+    const ty = parseFloat(textEl.getAttribute('y'));
+    if (editorX == null) editorX = tx;
+    if (editorY == null) editorY = ty - 18;
+
+    const fo = document.createElementNS(SVG_NS, 'foreignObject');
+    fo.setAttribute('x', editorX);
+    fo.setAttribute('y', editorY);
+    fo.setAttribute('width', 200);
+    fo.setAttribute('height', 36);
+    fo.setAttribute('class', 'vertex-label-editor');
+    fo.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentLabel;
+    input.className = 'vertex-label-input';
+    fo.appendChild(input);
+    workspace.appendChild(fo);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const value = input.value.trim();
+      if (value !== currentLabel) {
+        pushUndo();
+        textEl.textContent = value;
+        textEl.setAttribute('data-label', value);
+        updateCircleLineLabelPositions(shapeGroup);
+      }
+      fo.remove();
+    }
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
     });
   }
 
@@ -1763,8 +1986,14 @@
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
         if (Math.hypot(dx, dy) >= VERTEX_DRAG_THRESHOLD) {
-          pushUndo();
           const shapeGroup = pendingVertex.closest('.shape-group');
+          if (shapeGroup.dataset.shapeType === 'regular-polygon' && !pendingVertexCtrl && !pendingVertexShift) {
+            pendingVertex = null;
+            startX = ev.clientX;
+            startY = ev.clientY;
+            return;
+          }
+          pushUndo();
           const startPoints = getVertexCoords(shapeGroup);
           if (pendingVertexCtrl) {
             const isCircle = shapeGroup.dataset.shapeType === 'circle';
@@ -2179,6 +2408,69 @@
     });
   }
 
+  function enableCircleLineLabelDrag(g) {
+    let draggingLabel = null;
+    let pendingLabelDrag = null;
+    let startX, startY, startTextX, startTextY;
+    const DRAG_THRESHOLD = 3;
+
+    g.addEventListener('mousedown', function (ev) {
+      if (!ev.target.classList.contains('circle-line-label')) return;
+      ev.stopPropagation();
+      pendingLabelDrag = ev.target;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      startTextX = parseFloat(ev.target.getAttribute('x'));
+      startTextY = parseFloat(ev.target.getAttribute('y'));
+    });
+
+    document.addEventListener('mousemove', function (ev) {
+      if (draggingLabel) {
+        const rect = workspace.getBoundingClientRect();
+        const scaleX = workspace.width.baseVal.value / rect.width;
+        const scaleY = workspace.height.baseVal.value / rect.height;
+        const dx = (ev.clientX - startX) * scaleX;
+        const dy = (ev.clientY - startY) * scaleY;
+        draggingLabel.setAttribute('x', startTextX + dx);
+        draggingLabel.setAttribute('y', startTextY + dy);
+        startX = ev.clientX;
+        startY = ev.clientY;
+        startTextX = parseFloat(draggingLabel.getAttribute('x'));
+        startTextY = parseFloat(draggingLabel.getAttribute('y'));
+      } else if (pendingLabelDrag) {
+        const dx = ev.clientX - startX;
+        const dy = ev.clientY - startY;
+        if (Math.hypot(dx, dy) >= DRAG_THRESHOLD) {
+          draggingLabel = pendingLabelDrag;
+          pendingLabelDrag = null;
+          startX = ev.clientX;
+          startY = ev.clientY;
+          startTextX = parseFloat(draggingLabel.getAttribute('x'));
+          startTextY = parseFloat(draggingLabel.getAttribute('y'));
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', function (ev) {
+      if (draggingLabel) {
+        const type = draggingLabel.getAttribute('data-type');
+        const idx = type === 'radius' ? draggingLabel.getAttribute('data-radius-index') : draggingLabel.getAttribute('data-diameter-index');
+        const line = type === 'radius'
+          ? g.querySelector('.circle-radius-line[data-radius-index="' + idx + '"]')
+          : g.querySelector('.circle-diameter-line[data-diameter-index="' + idx + '"]');
+        if (line) {
+          const mid = getCircleLineMidpoint(line);
+          const tx = parseFloat(draggingLabel.getAttribute('x'));
+          const ty = parseFloat(draggingLabel.getAttribute('y'));
+          draggingLabel.setAttribute('data-offset-dx', String(tx - mid.mx));
+          draggingLabel.setAttribute('data-offset-dy', String(ty - mid.my));
+        }
+      }
+      draggingLabel = null;
+      pendingLabelDrag = null;
+    });
+  }
+
   function enableAltitudeLabelDrag(g) {
     let draggingLabel = null;
     let pendingLabelDrag = null;
@@ -2367,7 +2659,7 @@
 
     g.addEventListener('mousedown', function (ev) {
       if (ev.target.classList.contains('vertex')) return;
-      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label')) return;
+      if (ev.target.classList.contains('vertex-label') || ev.target.classList.contains('edge-label') || ev.target.classList.contains('altitude-label') || ev.target.classList.contains('circle-line-label')) return;
       if (altitudeDrawingMode) return;
       if (g.dataset.shapeType === 'circle' && (ev.target.classList.contains('circle-radius-line') || ev.target.classList.contains('circle-diameter-line'))) {
         ev.preventDefault();
