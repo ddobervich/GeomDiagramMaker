@@ -27,8 +27,15 @@
     <div class="shape-icon" draggable="true" data-shape="circle" title="Circle">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
     </div>
-    <div class="shape-icon" draggable="true" data-shape="regular-polygon" title="Regular polygon (hexagon)">
-      <svg viewBox="0 0 24 24"><path d="M12 2 L21 6.5 L21 17.5 L12 22 L3 17.5 L3 6.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    <div class="palette-regular-polygon">
+      <div class="shape-icon" draggable="true" data-shape="regular-polygon" data-sides="6" title="Regular polygon (n-gon)">
+        <svg viewBox="0 0 24 24"><path d="M12 2 L21 6.5 L21 17.5 L12 22 L3 17.5 L3 6.5 Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </div>
+      <div class="palette-sides-control">
+        <button type="button" class="palette-sides-btn" aria-label="Fewer sides">−</button>
+        <span class="palette-sides-value">6</span>
+        <button type="button" class="palette-sides-btn" aria-label="More sides">+</button>
+      </div>
     </div>
     <div class="trash-zone" id="trash" title="Drag a shape here to delete">
       <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>

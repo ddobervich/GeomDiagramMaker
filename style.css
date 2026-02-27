@@ -108,6 +108,50 @@ body {
   cursor: move;
 }
 
+.palette-regular-polygon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.palette-sides-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.palette-sides-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #999;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.palette-sides-btn:hover {
+  background: #e8e8e8;
+}
+
+.palette-sides-btn:active {
+  background: #ddd;
+}
+
+.palette-sides-value {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+}
+
 .shape-group .shape-body {
   fill: #fff;
   stroke: none;
