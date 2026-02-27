@@ -3863,6 +3863,25 @@
         if (edgeIndex !== null) openEdgeLabelEditor(g, edgeIndex);
       });
     }
+    g.querySelectorAll('.shape-edge').forEach(function (line) {
+      line.addEventListener('dblclick', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (contextMenuTimeout) {
+          clearTimeout(contextMenuTimeout);
+          contextMenuTimeout = null;
+        }
+        const edgeIndex = parseInt(this.getAttribute('data-edge-index'), 10);
+        if (isNaN(edgeIndex)) return;
+        const x1 = parseFloat(this.getAttribute('x1'));
+        const y1 = parseFloat(this.getAttribute('y1'));
+        const x2 = parseFloat(this.getAttribute('x2'));
+        const y2 = parseFloat(this.getAttribute('y2'));
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2;
+        openEdgeLabelEditor(g, edgeIndex, mx, my - 18);
+      });
+    });
     g.querySelectorAll('.edge-label').forEach(text => {
       text.addEventListener('dblclick', function (ev) {
         ev.preventDefault();
@@ -4403,6 +4422,16 @@
               contextMenuTimeout = null;
               showChordContextMenu(g, chordLine, cx, cy);
             }, CLICK_MENU_DELAY);
+          } else if (ev.target.classList.contains('shape-edge')) {
+            const edgeIndexAttr = ev.target.getAttribute('data-edge-index');
+            const edgeIndex = edgeIndexAttr != null ? parseInt(edgeIndexAttr, 10) : null;
+            if (edgeIndex !== null && !Number.isNaN(edgeIndex)) {
+              if (contextMenuTimeout) clearTimeout(contextMenuTimeout);
+              contextMenuTimeout = setTimeout(function () {
+                contextMenuTimeout = null;
+                showEdgeContextMenu(g, edgeIndex, cx, cy);
+              }, CLICK_MENU_DELAY);
+            }
           } else if (ev.target.classList.contains('shape-body')) {
             const edgeIndex = g.dataset.shapeType === 'circle' ? null : getClosestEdgeIndex(g, px, py);
             if (edgeIndex !== null) {
@@ -4467,15 +4496,23 @@
     const wrap = document.querySelector('.palette-regular-polygon');
     if (!wrap) return;
     const icon = wrap.querySelector('.shape-icon');
+    const iconPath = wrap.querySelector('.shape-icon svg path');
     const valueEl = wrap.querySelector('.palette-sides-value');
     const btnMinus = wrap.querySelector('.palette-sides-control .palette-sides-btn:first-of-type');
     const btnPlus = wrap.querySelector('.palette-sides-control .palette-sides-btn:last-of-type');
-    if (!icon || !valueEl || !btnMinus || !btnPlus) return;
+    if (!icon || !iconPath || !valueEl || !btnMinus || !btnPlus) return;
     function updateDisplay() {
       const n = parseInt(icon.dataset.sides, 10) || DEFAULT_REGULAR_POLYGON_SIDES;
       const clamped = Math.max(MIN_REGULAR_POLYGON_SIDES, Math.min(MAX_REGULAR_POLYGON_SIDES, n));
       icon.dataset.sides = String(clamped);
       valueEl.textContent = String(clamped);
+      const pts = regularPolygonPoints(clamped);
+      const d = pts.map(function (p, i) {
+        const x = (2 + p[0] * 20).toFixed(1);
+        const y = (2 + p[1] * 20).toFixed(1);
+        return (i === 0 ? 'M' : 'L') + x + ' ' + y;
+      }).join(' ') + ' Z';
+      iconPath.setAttribute('d', d);
     }
     btnMinus.addEventListener('click', function (ev) {
       ev.preventDefault();

@@ -119,7 +119,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 2px;
 }
 
 .palette-sides-btn {
@@ -148,7 +148,7 @@ body {
 .palette-sides-value {
   font-size: 14px;
   font-weight: 600;
-  min-width: 20px;
+  min-width: 14px;
   text-align: center;
 }
 
@@ -165,7 +165,8 @@ body {
 
 .shape-group .shape-edge {
   fill: none;
-  pointer-events: none;
+  pointer-events: stroke;
+  cursor: crosshair;
 }
 
 .shape-group:hover .shape-body {
