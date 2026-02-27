@@ -19,7 +19,9 @@
     'parallelogram': [[0, 0], [1, 0], [0.85, 0.6], [-0.15, 0.6]],
     'trapezoid': [[0.15, 0], [0.85, 0], [1, 0.6], [0, 0.6]],
     'right-triangle': [[0, 0], [1, 0], [0, 0.6]],
-    'equilateral-triangle': [[0.5, 0], [1, 0.866], [0, 0.866]],
+    // Isosceles triangle: ~2x taller than wide
+    // Height range = 1, width range = 0.5 → 1 / 0.5 = 2
+    'equilateral-triangle': [[0.5, 0], [0.75, 1], [0.25, 1]],
     'circle': [[0.5, 0.5], [1, 0.5]],
     'regular-polygon': null
   };
@@ -1752,6 +1754,7 @@
       apothemLine.setAttribute('data-stroke-dasharray', '8,4');
       apothemLine.setAttribute('pointer-events', 'stroke');
       apothemLinesGroup.appendChild(apothemLine);
+      updateApothemRightAngleMarks(shapeGroupForApothem);
       apothemDrawingMode = null;
       document.removeEventListener('mousemove', updateApothemTemp);
       document.removeEventListener('click', finishApothem, true);
@@ -2509,6 +2512,7 @@
       line.setAttribute('y2', midY);
     });
     updateApothemLabelPositions(g);
+    updateApothemRightAngleMarks(g);
   }
 
   function updateChords(g) {
@@ -2981,6 +2985,115 @@
     g.appendChild(marksGroup);
   }
 
+  function updateApothemRightAngleMarks(g) {
+    const points = getVertexCoords(g);
+    const n = points.length;
+    if (n < 3) return;
+    // Update or remove existing apothem-foot marks
+    g.querySelectorAll('.right-angle-mark[data-apothem-edge-index]').forEach(function (mark) {
+      const edgeIndex = parseInt(mark.getAttribute('data-apothem-edge-index'), 10);
+      if (isNaN(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) {
+        mark.remove();
+        return;
+      }
+      const apothemLine = g.querySelector('.apothem-line[data-edge-index=\"' + edgeIndex + '\"]');
+      if (!apothemLine) {
+        mark.remove();
+        return;
+      }
+      const fx = parseFloat(apothemLine.getAttribute('x2'));
+      const fy = parseFloat(apothemLine.getAttribute('y2'));
+      const vx = parseFloat(apothemLine.getAttribute('x1'));
+      const vy = parseFloat(apothemLine.getAttribute('y1'));
+      const ax = points[edgeIndex][0];
+      const ay = points[edgeIndex][1];
+      const bx = points[(edgeIndex + 1) % n][0];
+      const by = points[(edgeIndex + 1) % n][1];
+      let ux = bx - ax;
+      let uy = by - ay;
+      const edgeLen = Math.hypot(ux, uy) || 1e-6;
+      ux /= edgeLen;
+      uy /= edgeLen;
+      let wx = vx - fx;
+      let wy = vy - fy;
+      const apoLen = Math.hypot(wx, wy) || 1e-6;
+      wx /= apoLen;
+      wy /= apoLen;
+      const s = RIGHT_ANGLE_MARK_SIZE;
+      const xA = fx + wx * s;
+      const yA = fy + wy * s;
+      const xB = fx + wx * s + ux * s;
+      const yB = fy + wy * s + uy * s;
+      const xC = fx + ux * s;
+      const yC = fy + uy * s;
+      const xD = fx + ux * s + wx * s;
+      const yD = fy + uy * s + wy * s;
+      const path = mark.querySelector('.right-angle-mark-line');
+      if (path && path.setAttribute) {
+        const edgeLine = g.querySelector('.shape-edge');
+        const edgeStrokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+        path.setAttribute('d', 'M' + xA + ',' + yA + 'L' + xB + ',' + yB + 'M' + xC + ',' + yC + 'L' + xD + ',' + yD);
+        path.setAttributeNS(SVG_NS, 'stroke-width', edgeStrokeWidth);
+        path.style.setProperty('stroke-width', edgeStrokeWidth + 'px');
+      }
+    });
+    // Ensure marks exist for all apothems
+    g.querySelectorAll('.apothem-line').forEach(function (line) {
+      const edgeIndex = parseInt(line.getAttribute('data-edge-index'), 10);
+      if (isNaN(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) return;
+      if (g.querySelector('.right-angle-mark[data-apothem-edge-index=\"' + edgeIndex + '\"]')) return;
+      const fx = parseFloat(line.getAttribute('x2'));
+      const fy = parseFloat(line.getAttribute('y2'));
+      const vx = parseFloat(line.getAttribute('x1'));
+      const vy = parseFloat(line.getAttribute('y1'));
+      const ax = points[edgeIndex][0];
+      const ay = points[edgeIndex][1];
+      const bx = points[(edgeIndex + 1) % n][0];
+      const by = points[(edgeIndex + 1) % n][1];
+      let ux = bx - ax;
+      let uy = by - ay;
+      const edgeLen = Math.hypot(ux, uy) || 1e-6;
+      ux /= edgeLen;
+      uy /= edgeLen;
+      let wx = vx - fx;
+      let wy = vy - fy;
+      const apoLen = Math.hypot(wx, wy) || 1e-6;
+      wx /= apoLen;
+      wy /= apoLen;
+      const s = RIGHT_ANGLE_MARK_SIZE;
+      const xA = fx + wx * s;
+      const yA = fy + wy * s;
+      const xB = fx + wx * s + ux * s;
+      const yB = fy + wy * s + uy * s;
+      const xC = fx + ux * s;
+      const yC = fy + uy * s;
+      const xD = fx + ux * s + wx * s;
+      const yD = fy + uy * s + wy * s;
+      const mark = document.createElementNS(SVG_NS, 'g');
+      mark.setAttribute('class', 'right-angle-mark');
+      mark.setAttribute('data-apothem-edge-index', String(edgeIndex));
+      const edgeLine = g.querySelector('.shape-edge');
+      const edgeStrokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('class', 'right-angle-mark-line');
+      path.setAttribute('d', 'M' + xA + ',' + yA + 'L' + xB + ',' + yB + 'M' + xC + ',' + yC + 'L' + xD + ',' + yD);
+      path.setAttributeNS(SVG_NS, 'stroke', '#000000');
+      path.setAttributeNS(SVG_NS, 'stroke-width', edgeStrokeWidth);
+      path.setAttributeNS(SVG_NS, 'fill', 'none');
+      path.style.setProperty('stroke', '#000000');
+      path.style.setProperty('stroke-width', edgeStrokeWidth + 'px');
+      path.style.setProperty('fill', 'none');
+      mark.appendChild(path);
+      let marksGroup = g.querySelector('.right-angle-marks');
+      if (!marksGroup) {
+        marksGroup = document.createElementNS(SVG_NS, 'g');
+        marksGroup.setAttribute('class', 'right-angle-marks');
+        g.appendChild(marksGroup);
+      }
+      marksGroup.appendChild(mark);
+    });
+  }
+
   function updateAltitudeRightAngleMarks(g) {
     const points = getVertexCoords(g);
     const n = points.length;
@@ -3034,6 +3147,8 @@
     const marks = Array.from(g.querySelectorAll('.right-angle-mark'));
     marks.forEach(function (mark) {
       if (mark.hasAttribute('data-altitude-id')) return;
+      if (mark.hasAttribute('data-apothem-edge-index')) return;
+      if (!mark.hasAttribute('data-vertex-index')) return;
       const vertexIndex = parseInt(mark.getAttribute('data-vertex-index'), 10);
       if (vertexIndex < 0 || vertexIndex >= n) {
         mark.remove();
