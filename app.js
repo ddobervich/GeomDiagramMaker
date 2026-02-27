@@ -85,7 +85,8 @@
           text: (el && (el.textContent || el.getAttribute('data-label') || '')) || '',
           offsetDx: el && el.hasAttribute('data-offset-dx') ? parseFloat(el.getAttribute('data-offset-dx')) : 0,
           offsetDy: el && el.hasAttribute('data-offset-dy') ? parseFloat(el.getAttribute('data-offset-dy')) : 0,
-          fontSize: el && el.hasAttribute('data-font-size') ? parseInt(el.getAttribute('data-font-size'), 10) : undefined
+          fontSize: el && el.hasAttribute('data-font-size') ? parseInt(el.getAttribute('data-font-size'), 10) : undefined,
+          showArrows: !!(el && el.getAttribute('data-show-arrows') === 'true')
         });
       }
       const edgeStyles = [];
@@ -406,6 +407,7 @@
         text.setAttribute('data-offset-dx', String(el.offsetDx != null ? el.offsetDx : 0));
         text.setAttribute('data-offset-dy', String(el.offsetDy != null ? el.offsetDy : 0));
         if (el.fontSize != null) setLabelFontSize(text, el.fontSize);
+        if (el.showArrows) text.setAttribute('data-show-arrows', 'true');
         edgeLabelsGroup.appendChild(text);
       }
     }
@@ -762,6 +764,7 @@
       }
       openAltitudeLabelEditor(g, ev.target);
     });
+    updateEdgeDimensionLines(g);
     workspace.appendChild(g);
     return g;
   }
@@ -884,6 +887,74 @@
       row.appendChild(sizeDisplay);
       row.appendChild(btnPlus);
       menu.appendChild(row);
+
+      const shapeGroup = labelEl.closest('.shape-group');
+      const isEdgeLabel =
+        labelEl.classList.contains('edge-label') &&
+        !labelEl.classList.contains('vertex-label') &&
+        !labelEl.classList.contains('altitude-label') &&
+        !labelEl.classList.contains('circle-line-label') &&
+        !labelEl.classList.contains('chord-label') &&
+        !labelEl.classList.contains('apothem-label') &&
+        !labelEl.classList.contains('center-line-label') &&
+        labelEl.hasAttribute('data-edge-index') &&
+        shapeGroup &&
+        shapeGroup.dataset.shapeType !== 'circle';
+      if (isEdgeLabel) {
+        const rowArrows = document.createElement('div');
+        rowArrows.className = 'context-menu-row';
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = 'Show arrows';
+        const btnToggle = document.createElement('button');
+        btnToggle.type = 'button';
+        btnToggle.className = 'context-menu-style-btn';
+        let showArrows = labelEl.getAttribute('data-show-arrows') === 'true';
+        function updateToggle() {
+          btnToggle.textContent = showArrows ? 'Hide arrows' : 'Show arrows';
+          if (showArrows) {
+            btnToggle.classList.add('context-menu-style-active');
+          } else {
+            btnToggle.classList.remove('context-menu-style-active');
+          }
+        }
+        btnToggle.addEventListener('click', function () {
+          if (!didPushUndo) { pushUndo(); didPushUndo = true; }
+          showArrows = !showArrows;
+          labelEl.setAttribute('data-show-arrows', showArrows ? 'true' : 'false');
+          if (showArrows && shapeGroup) {
+            const points = getVertexCoords(shapeGroup);
+            const n = points.length;
+            const edgeIndex = parseInt(labelEl.getAttribute('data-edge-index'), 10);
+            if (!isNaN(edgeIndex) && edgeIndex >= 0 && edgeIndex < n) {
+              const a = points[edgeIndex];
+              const b = points[(edgeIndex + 1) % n];
+              const mx = (a[0] + b[0]) / 2;
+              const my = (a[1] + b[1]) / 2;
+              const dx = b[0] - a[0];
+              const dy = b[1] - a[1];
+              const len = Math.hypot(dx, dy) || 1e-6;
+              const nx = -dy / len;
+              const ny = dx / len;
+              const lx = parseFloat(labelEl.getAttribute('x')) || mx;
+              const ly = parseFloat(labelEl.getAttribute('y')) || my;
+              const sideDot = (lx - mx) * nx + (ly - my) * ny;
+              const sideSign = sideDot >= 0 ? 1 : -1;
+              const dimMx = mx + nx * DIMENSION_OFFSET * sideSign;
+              const dimMy = my + ny * DIMENSION_OFFSET * sideSign;
+              labelEl.setAttribute('x', dimMx);
+              labelEl.setAttribute('y', dimMy);
+              labelEl.setAttribute('data-offset-dx', String(dimMx - mx));
+              labelEl.setAttribute('data-offset-dy', String(dimMy - my));
+            }
+          }
+          if (shapeGroup) updateEdgeDimensionLines(shapeGroup);
+          updateToggle();
+        });
+        updateToggle();
+        rowArrows.appendChild(labelSpan);
+        rowArrows.appendChild(btnToggle);
+        menu.appendChild(rowArrows);
+      }
     });
   }
 
@@ -2373,6 +2444,7 @@
       updateCenterLines(g);
     }
     updateRightAngleMarks(g);
+    updateEdgeDimensionLines(g);
   }
 
   function updateCenterLines(g) {
@@ -2608,6 +2680,131 @@
         text.setAttribute('y', my + dy);
       }
     }
+  }
+
+  function updateEdgeDimensionLines(g) {
+    const points = getVertexCoords(g);
+    const n = points.length;
+    if (n < 2) return;
+    let group = g.querySelector('.edge-dimensions');
+    if (!group) {
+      group = document.createElementNS(SVG_NS, 'g');
+      group.setAttribute('class', 'edge-dimensions');
+      const edgesGroup = g.querySelector('.shape-edges');
+      if (edgesGroup && edgesGroup.nextSibling) {
+        g.insertBefore(group, edgesGroup.nextSibling);
+      } else {
+        g.appendChild(group);
+      }
+    }
+    while (group.firstChild) group.removeChild(group.firstChild);
+
+    g.querySelectorAll('.edge-label[data-edge-index]').forEach(function (labelEl) {
+      if (!labelEl.classList.contains('edge-label')) return;
+      if (labelEl.classList.contains('vertex-label') ||
+          labelEl.classList.contains('altitude-label') ||
+          labelEl.classList.contains('circle-line-label') ||
+          labelEl.classList.contains('chord-label') ||
+          labelEl.classList.contains('apothem-label') ||
+          labelEl.classList.contains('center-line-label')) return;
+      if (labelEl.getAttribute('data-show-arrows') !== 'true') return;
+      const edgeIndex = parseInt(labelEl.getAttribute('data-edge-index'), 10);
+      if (isNaN(edgeIndex) || edgeIndex < 0 || edgeIndex >= n) return;
+      const a = points[edgeIndex];
+      const b = points[(edgeIndex + 1) % n];
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy) || 1e-6;
+      const tx = dx / len;
+      const ty = dy / len;
+      const nx = -ty;
+      const ny = tx;
+      const mx = (a[0] + b[0]) / 2;
+      const my = (a[1] + b[1]) / 2;
+      const lx = parseFloat(labelEl.getAttribute('x')) || mx;
+      const ly = parseFloat(labelEl.getAttribute('y')) || my;
+      const vx = lx - mx;
+      const vy = ly - my;
+      const nDist = vx * nx + vy * ny;
+      const sideSign = nDist >= 0 ? 1 : -1;
+      const absDist = Math.abs(nDist);
+      const offsetDist = absDist < DIMENSION_OFFSET * 0.5 ? DIMENSION_OFFSET * sideSign : nDist;
+
+      const ax = a[0];
+      const ay = a[1];
+      const bx = b[0];
+      const by = b[1];
+      const ex1x = ax + nx * offsetDist;
+      const ex1y = ay + ny * offsetDist;
+      const ex2x = bx + nx * offsetDist;
+      const ex2y = by + ny * offsetDist;
+
+      const edgeLine = g.querySelector('.shape-edge[data-edge-index="' + edgeIndex + '"]');
+      const stroke = edgeLine ? (edgeLine.getAttribute('data-stroke') || edgeLine.getAttribute('stroke') || '#000') : '#000';
+      const strokeWidth = edgeLine ? (edgeLine.getAttribute('data-stroke-width') || edgeLine.getAttribute('stroke-width') || '2') : '2';
+
+      function addLine(x1, y1, x2, y2, cls) {
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('class', cls);
+        line.setAttribute('data-edge-index', String(edgeIndex));
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('stroke', stroke);
+        line.setAttribute('stroke-width', strokeWidth);
+        line.setAttribute('pointer-events', 'none');
+        group.appendChild(line);
+      }
+
+      // Dimension line with gap around label
+      const dimMidX = (ex1x + ex2x) / 2;
+      const dimMidY = (ex1y + ex2y) / 2;
+      const halfGap = DIMENSION_LABEL_GAP * 0.5;
+      const gapVecX = tx * halfGap;
+      const gapVecY = ty * halfGap;
+      const leftGapX = dimMidX - gapVecX;
+      const leftGapY = dimMidY - gapVecY;
+      const rightGapX = dimMidX + gapVecX;
+      const rightGapY = dimMidY + gapVecY;
+
+      addLine(ex1x, ex1y, leftGapX, leftGapY, 'edge-dimension-line');
+      addLine(rightGapX, rightGapY, ex2x, ex2y, 'edge-dimension-line');
+
+      // Arrowheads at both ends, pointing toward center
+      function addArrow(tipX, tipY, dirX, dirY) {
+        const s = DIMENSION_ARROW_SIZE;
+        const baseX = tipX + dirX * s;
+        const baseY = tipY + dirY * s;
+        const wingX = -dirY;
+        const wingY = dirX;
+        const wingLen = s * 0.5;
+        const p1x = baseX + wingX * wingLen;
+        const p1y = baseY + wingY * wingLen;
+        const p2x = baseX - wingX * wingLen;
+        const p2y = baseY - wingY * wingLen;
+        addLine(tipX, tipY, p1x, p1y, 'edge-dimension-arrow');
+        addLine(tipX, tipY, p2x, p2y, 'edge-dimension-arrow');
+      }
+
+      // Start arrow points from ex1 toward center (positive along edge)
+      addArrow(ex1x, ex1y, tx, ty);
+      // End arrow points from ex2 toward center (negative along edge)
+      addArrow(ex2x, ex2y, -tx, -ty);
+
+      // Perpendicular ticks centered on arrowheads
+      function addTick(centerX, centerY) {
+        const half = DIMENSION_TICK_LENGTH * 0.5;
+        const x1 = centerX - nx * half;
+        const y1 = centerY - ny * half;
+        const x2 = centerX + nx * half;
+        const y2 = centerY + ny * half;
+        addLine(x1, y1, x2, y2, 'edge-dimension-tick');
+      }
+
+      addTick(ex1x, ex1y);
+      addTick(ex2x, ex2y);
+    });
   }
 
   function updateLabelPositions(g) {
@@ -2847,6 +3044,10 @@
 
   const RIGHT_ANGLE_COS_THRESHOLD = 0.08;
   const RIGHT_ANGLE_MARK_SIZE = 24;
+  const DIMENSION_OFFSET = 32;
+  const DIMENSION_LABEL_GAP = 32;
+  const DIMENSION_ARROW_SIZE = 14;
+  const DIMENSION_TICK_LENGTH = 18;
 
   function isNearRightAngle(g, vertexIndex) {
     const points = getVertexCoords(g);
@@ -4071,6 +4272,7 @@
         const ty = parseFloat(draggingLabel.getAttribute('y'));
         draggingLabel.setAttribute('data-offset-dx', tx - mx);
         draggingLabel.setAttribute('data-offset-dy', ty - my);
+        if (shapeGroup) updateEdgeDimensionLines(shapeGroup);
       }
       draggingLabel = null;
       pendingLabelDrag = null;
